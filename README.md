@@ -59,7 +59,7 @@ Re-entering a slot during the same drag places another item there.
 ```
 
 # Release Checklist
-==========
+
 - Bump version in `settings.gradle` (`ext.release_version`).
 - Keep `gradle.properties` `mod_version` aligned with the same value.
 - Commit and tag (for example `v1.0.0`).
@@ -67,6 +67,6 @@ Re-entering a slot during the same drag places another item there.
 - The `Release Jar` workflow will build and attach `build/jar/*.jar` to the release.
 
 # Additional Resources:
-==========
+
 Community Documentation: https://docs.neoforged.net/  
 NeoForged Discord: https://discord.neoforged.net/
