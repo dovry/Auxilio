@@ -34,6 +34,7 @@ All options can be toggled on/off via in-game mod config menu, or root Minecraft
 ## Scroll transfer:
 
   Scroll up: move 1 item from hovered slot toward the opposite inventory side.
+  
   Scroll down: move 1 item from hovered non-player slot into player inventory.
 
 ![scroll items](images/scroll_items.gif)
