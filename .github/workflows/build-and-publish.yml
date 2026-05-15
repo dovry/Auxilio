@@ -1,0 +1,136 @@
+name: Build And Publish Jar
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      JAVA_VERSION: '25'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build jar
+        run: ./gradlew clean buildModJar
+
+      - name: Upload jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auxilio-jar
+          path: build/jar/*.jar
+
+  release-jar:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: release
+    env:
+      JAVA_VERSION: '25'
+      CF_PROJECT_ID: '1543992'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Read release metadata
+        id: meta
+        shell: bash
+        run: |
+          echo "mod_id=$(grep '^mod_id=' gradle.properties | cut -d'=' -f2-)" >> "$GITHUB_OUTPUT"
+          echo "release_version=$(grep '^mod_version=' gradle.properties | cut -d'=' -f2-)" >> "$GITHUB_OUTPUT"
+          echo "minecraft_version=$(grep '^minecraft_version=' gradle.properties | cut -d'=' -f2-)" >> "$GITHUB_OUTPUT"
+          echo "neo_version=$(grep '^neo_version=' gradle.properties | cut -d'=' -f2-)" >> "$GITHUB_OUTPUT"
+
+      - name: Download jar artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: auxilio-jar
+          path: build/jar
+
+      - name: Upload jar to GitHub Release
+        shell: bash
+        run: |
+          RELEASE_VERSION="${{ steps.meta.outputs.release_version }}"
+          MINECRAFT_VERSION="${{ steps.meta.outputs.minecraft_version }}"
+          NEO_VERSION="${{ steps.meta.outputs.neo_version }}"
+          REPO="${{ github.repository }}"
+
+          PREV_TAG="$(git tag --sort=-v:refname | grep -v "^${RELEASE_VERSION}$" | head -n1 || true)"
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          {
+            echo "## Versions"
+            echo "- Mod: ${RELEASE_VERSION}"
+            echo "- Minecraft: ${MINECRAFT_VERSION}"
+            echo "- NeoForge: ${NEO_VERSION}"
+            echo
+            echo "## Changelog"
+            if [ "$RANGE" = "HEAD" ]; then
+              git log -n 30 --pretty='- %s (%h)'
+            else
+              git log "$RANGE" --pretty='- %s (%h)'
+            fi
+            echo
+            echo "## Pull Requests"
+            PRS="$(git log ${RANGE} --pretty='%s%n%b' | grep -oE '#[0-9]+' | sort -u || true)"
+            if [ -n "$PRS" ]; then
+              while IFS= read -r pr; do
+                num="${pr#\#}"
+                echo "- [#${num}](https://github.com/${REPO}/pull/${num})"
+              done <<< "$PRS"
+            else
+              echo "- None referenced in commit messages."
+            fi
+          } > release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_version }}
+          name: ${{ steps.meta.outputs.release_version }}
+          body_path: release-notes.md
+          files: build/jar/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload jar to CurseForge
+        uses: itsmeow/curseforge-upload@v3
+        with:
+          token: ${{ secrets.CF_API_KEY }}
+          project_id: ${{ env.CF_PROJECT_ID }}
+          game_endpoint: minecraft
+          file_path: build/jar/${{ steps.meta.outputs.mod_id }}-${{ steps.meta.outputs.release_version }}.jar
+          release_type: release
+          game_versions: Minecraft ${{ steps.meta.outputs.minecraft_version }}:${{ steps.meta.outputs.minecraft_version }},Java ${{ env.JAVA_VERSION }},NeoForge ${{ steps.meta.outputs.neo_version }}
