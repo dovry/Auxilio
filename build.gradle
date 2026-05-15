@@ -14,7 +14,7 @@ tasks.named('wrapper', Wrapper).configure {
     distributionType = Wrapper.DistributionType.BIN
 }
 
-version = mod_version
+version = release_version
 group = mod_group_id
 
 sourceSets.main.resources {
@@ -146,7 +146,7 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
-            mod_version            : mod_version,
+            mod_version            : release_version,
     ]
     inputs.properties replaceProperties
     expand replaceProperties
@@ -175,6 +175,16 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+def jarOutputDir = layout.buildDirectory.dir("jar")
+
+tasks.register("buildModJar", Copy) {
+    group = "build"
+    description = "Builds the mod jar and copies it to build/jar for easy pickup."
+    dependsOn tasks.named("jar")
+    from(tasks.named("jar"))
+    into(jarOutputDir)
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

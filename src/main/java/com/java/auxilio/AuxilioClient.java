@@ -1,4 +1,4 @@
-package com.java.auxillio;
+package com.java.auxilio;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
@@ -34,21 +34,21 @@ import java.util.List;
 import java.util.Set;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
-@Mod(value = Auxillio.MODID, dist = Dist.CLIENT)
+@Mod(value = Auxilio.MODID, dist = Dist.CLIENT)
 // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
-@EventBusSubscriber(modid = Auxillio.MODID, value = Dist.CLIENT)
-public class AuxillioClient {
+@EventBusSubscriber(modid = Auxilio.MODID, value = Dist.CLIENT)
+public class AuxilioClient {
     private static final long SHIFT_DOUBLE_CLICK_WINDOW_MS = 300L;
-    private static final KeyMapping.Category KEY_CATEGORY = new KeyMapping.Category(net.minecraft.resources.Identifier.fromNamespaceAndPath(Auxillio.MODID, "mouse_tweaks"));
+    private static final KeyMapping.Category KEY_CATEGORY = new KeyMapping.Category(net.minecraft.resources.Identifier.fromNamespaceAndPath(Auxilio.MODID, "mouse_tweaks"));
     private static final KeyMapping SPREAD_IN_CRAFTING = new KeyMapping(
-            "key.auxillio.spread_in_crafting",
+            "key.auxilio.spread_in_crafting",
             KeyConflictContext.GUI,
             InputConstants.Type.MOUSE,
             GLFW.GLFW_MOUSE_BUTTON_MIDDLE,
             KEY_CATEGORY
     );
     private static final KeyMapping DRAG_QUICK_MOVE = new KeyMapping(
-            "key.auxillio.drag_quick_move",
+            "key.auxilio.drag_quick_move",
             KeyConflictContext.GUI,
             KeyModifier.SHIFT,
             InputConstants.Type.MOUSE,
@@ -62,20 +62,20 @@ public class AuxillioClient {
     private static boolean customRightDragActive = false;
     private static int customRightDragLastSlot = -1;
 
-    public AuxillioClient(IEventBus modEventBus, ModContainer container) {
+    public AuxilioClient(IEventBus modEventBus, ModContainer container) {
         // Allows NeoForge to create a config screen for this mod's configs.
         // The config screen is accessed by going to the Mods screen > clicking on your mod > clicking on config.
         // Do not forget to add translations for your config options to the en_us.json file.
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
-        modEventBus.addListener(AuxillioClient::registerKeyMappings);
+        modEventBus.addListener(AuxilioClient::registerKeyMappings);
     }
 
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
         // Some client setup code
-        Auxillio.LOGGER.info("HELLO FROM CLIENT SETUP");
-        Auxillio.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
-        Auxillio.LOGGER.info("MouseTweaks debug toggle (debugMouseTweaks) = {}", Config.DEBUG_MOUSE_TWEAKS.getAsBoolean());
+        Auxilio.LOGGER.info("HELLO FROM CLIENT SETUP");
+        Auxilio.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+        Auxilio.LOGGER.info("MouseTweaks debug toggle (debugMouseTweaks) = {}", Config.DEBUG_MOUSE_TWEAKS.getAsBoolean());
     }
 
     static void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -107,22 +107,16 @@ public class AuxillioClient {
             return;
         }
 
-        if (!(menu instanceof InventoryMenu) && !(menu instanceof CraftingMenu)) {
-            return;
-        }
-
-        if (!menu.getCarried().isEmpty()) {
-            return;
-        }
-
         Slot sourceSlot = screen.getHoveredSlot();
         if (sourceSlot == null) {
             return;
         }
 
         boolean handled = false;
-        if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+        if (Config.ENABLE_SHIFT_DOUBLE_CLICK_BULK_MOVE.getAsBoolean()
+                && event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
                 && event.getMouseButtonEvent().hasShiftDown()
+                && menu.getCarried().isEmpty()
                 && isPlayerInventorySlot(menu, sourceSlot, mc.player.getInventory())) {
             long now = System.currentTimeMillis();
             boolean withinWindow = now - lastShiftLeftClickAt <= SHIFT_DOUBLE_CLICK_WINDOW_MS;
@@ -138,7 +132,12 @@ public class AuxillioClient {
                 lastShiftLeftType = sourceSlot.getItem().copyWithCount(1);
                 debug("shiftDoubleLeft armed slot={} type={}", sourceSlot.index, lastShiftLeftType.getItem());
             }
-        } else if (matchesSpreadMouse(event) && isCraftSlot(menu, sourceSlot)) {
+        } else if ((menu instanceof InventoryMenu || menu instanceof CraftingMenu)
+                && menu.getCarried().isEmpty()
+                && Config.ENABLE_SPREAD_SORT.getAsBoolean()
+                && isKeyFeatureEnabled(SPREAD_IN_CRAFTING)
+                && matchesSpreadMouse(event)
+                && isCraftSlot(menu, sourceSlot)) {
             handled = sortCraftGrid(menu, mc);
         }
 
@@ -150,6 +149,9 @@ public class AuxillioClient {
     @SubscribeEvent
     static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
+            return;
+        }
+        if (!Config.ENABLE_SPREAD_SORT.getAsBoolean() || !isKeyFeatureEnabled(SPREAD_IN_CRAFTING)) {
             return;
         }
         if (!matchesSpreadKey(event)) {
@@ -187,6 +189,9 @@ public class AuxillioClient {
     @SubscribeEvent
     static void onMouseDragged(ScreenEvent.MouseDragged.Pre event) {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
+            return;
+        }
+        if (!Config.ENABLE_SHIFT_DRAG_QUICK_MOVE.getAsBoolean() || !isKeyFeatureEnabled(DRAG_QUICK_MOVE)) {
             return;
         }
         if (customRightDragActive && event.getMouseButton() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
@@ -273,6 +278,9 @@ public class AuxillioClient {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
+        if (!Config.ENABLE_SCROLL_TRANSFER.getAsBoolean()) {
+            return;
+        }
 
         double deltaY = event.getScrollDeltaY();
         if (deltaY == 0.0D) {
@@ -303,7 +311,7 @@ public class AuxillioClient {
     }
 
     private static boolean sendOneToPlayerInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
-        Profiler.get().push("auxillio_scroll_down_one_to_player");
+        Profiler.get().push("auxilio_scroll_down_one_to_player");
         try {
         if (!hovered.hasItem() || !menu.getCarried().isEmpty() || isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
             return false;
@@ -326,7 +334,7 @@ public class AuxillioClient {
     }
 
     private static boolean sendOneToOppositeInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
-        Profiler.get().push("auxillio_scroll_up_one_to_container");
+        Profiler.get().push("auxilio_scroll_up_one_to_container");
         try {
         if (!hovered.hasItem() || !menu.getCarried().isEmpty()) {
             return false;
@@ -417,7 +425,7 @@ public class AuxillioClient {
     }
 
     private static boolean sortCraftGrid(AbstractContainerMenu menu, Minecraft mc) {
-        Profiler.get().push("auxillio_sort_craft_grid");
+        Profiler.get().push("auxilio_sort_craft_grid");
         try {
         List<Slot> craftSlots = getCraftSlots(menu);
         List<ItemStack> types = getDistinctTypesInCraftGrid(craftSlots);
@@ -444,7 +452,7 @@ public class AuxillioClient {
     }
 
     private static boolean quickMoveAllOfTypeFromPlayer(AbstractContainerMenu menu, ItemStack sourceType, Minecraft mc) {
-        Profiler.get().push("auxillio_shift_double_click_quick_move_all");
+        Profiler.get().push("auxilio_shift_double_click_quick_move_all");
         try {
         if (sourceType.isEmpty()) {
             return false;
@@ -597,6 +605,10 @@ public class AuxillioClient {
         return SPREAD_IN_CRAFTING.isActiveAndMatches(pressed) || SPREAD_IN_CRAFTING.getKey().equals(pressed);
     }
 
+    private static boolean isKeyFeatureEnabled(KeyMapping key) {
+        return !key.isUnbound();
+    }
+
     private static void click(AbstractContainerMenu menu, Slot slot, int button, ContainerInput input, Minecraft mc) {
         clickRaw(menu.containerId, slot.index, button, input, mc);
     }
@@ -669,7 +681,7 @@ public class AuxillioClient {
 
     private static void debug(String message, Object... args) {
         if (Config.DEBUG_MOUSE_TWEAKS.getAsBoolean()) {
-            Auxillio.LOGGER.info("[MouseTweaks] " + message, args);
+            Auxilio.LOGGER.info("[MouseTweaks] " + message, args);
         }
     }
 }
