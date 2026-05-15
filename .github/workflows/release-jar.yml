@@ -35,7 +35,7 @@ jobs:
         with:
           files: build/jar/*.jar
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Upload jar artifact (manual runs)
         if: github.event_name != 'release'
