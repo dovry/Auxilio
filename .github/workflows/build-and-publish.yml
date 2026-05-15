@@ -151,14 +151,14 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-     # - name: Upload jar to CurseForge
-     #   uses: itsmeow/curseforge-upload@v3
-     #   with:
-     #     token: ${{ secrets.CF_API_KEY }}
-     #     project_id: ${{ env.CF_PROJECT_ID }}
-     #     game_endpoint: minecraft
-     #     file_path: build/jar/${{ steps.meta.outputs.dist_jar_name }}
-     #     release_type: release
-     #     game_versions: Minecraft ${{ steps.meta.outputs.cf_minecraft_series }}:${{ steps.meta.outputs.cf_minecraft_version }},Java ${{ env.JAVA_VERSION }},NeoForge
-     #     changelog: ${{ steps.cf_changelog.outputs.body }}
-     #     changelog_type: markdown
+      - name: Upload jar to CurseForge
+        uses: itsmeow/curseforge-upload@v3
+        with:
+          token: ${{ secrets.CF_API_KEY }}
+          project_id: ${{ env.CF_PROJECT_ID }}
+          game_endpoint: minecraft
+          file_path: build/jar/${{ steps.meta.outputs.dist_jar_name }}
+          release_type: release
+          game_versions: Minecraft ${{ steps.meta.outputs.cf_minecraft_series }}:${{ steps.meta.outputs.cf_minecraft_version }},Java ${{ env.JAVA_VERSION }},NeoForge
+          changelog: ${{ steps.cf_changelog.outputs.body }}
+          changelog_type: markdown
