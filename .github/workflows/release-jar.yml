@@ -47,7 +47,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'master-snapshot' }}
-          name: ${{ github.event_name == 'pull_request' && format('PR #{0} Build', github.event.pull_request.number) || format('Master Snapshot ({0})', github.sha) }}
+          name: ${{ github.event_name == 'pull_request' && format('PR {0} Build', github.event.pull_request.number) || format('Master Snapshot ({0})', github.sha) }}
           prerelease: true
           make_latest: false
           files: build/jar/*.jar
