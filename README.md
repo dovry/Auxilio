@@ -50,7 +50,7 @@ Scroll down: move 1 item from hovered non-player slot into player inventory.
 
 Scrolling items into furnaces will deposit almost anything into the top slot. Shift scroll up will scroll items into the fuel slot instead
 
-!(furnace scroll)[https://github.com/dovry/Auxilio/blob/master/images/furnace_scroll.gif?raw=true]
+![furnace scroll](https://github.com/dovry/Auxilio/blob/master/images/furnace_scroll.gif?raw=true)
 
 ## Repeat right-drag:
 
