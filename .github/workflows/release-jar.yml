@@ -66,7 +66,7 @@ jobs:
         uses: itsmeow/curseforge-upload@v3
         with:
           token: ${{ secrets.CF_API_KEY }}
-          project_id: ${{ vars.CF_PROJECT_ID }}
+          project_id: ${{ env.CF_PROJECT_ID }}
           game_endpoint: minecraft
           file_path: build/jar/${{ steps.meta.outputs.mod_id }}-${{ steps.meta.outputs.release_version }}.jar
           release_type: release
