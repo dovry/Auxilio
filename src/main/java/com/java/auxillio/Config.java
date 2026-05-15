@@ -1,4 +1,4 @@
-package com.java.auxillio;
+package com.java.auxilio;
 
 import java.util.List;
 import java.util.Set;
@@ -45,6 +45,22 @@ public class Config {
     public static final ModConfigSpec.BooleanValue ENABLE_REPEAT_RIGHT_DRAG = BUILDER
             .comment("Replace vanilla RMB drag with repeat-on-revisit behavior")
             .define("enableRepeatRightDrag", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_SPREAD_SORT = BUILDER
+            .comment("Enable middle-click crafting grid sorting")
+            .define("enableSpreadSort", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_SHIFT_DRAG_QUICK_MOVE = BUILDER
+            .comment("Enable shift + drag quick-move behavior")
+            .define("enableShiftDragQuickMove", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_SHIFT_DOUBLE_CLICK_BULK_MOVE = BUILDER
+            .comment("Enable shift + double-left-click bulk quick-move of matching items")
+            .define("enableShiftDoubleClickBulkMove", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_SCROLL_TRANSFER = BUILDER
+            .comment("Enable scroll up/down single-item transfer behavior")
+            .define("enableScrollTransfer", true);
 
     static final ModConfigSpec SPEC = BUILDER.build();
 
