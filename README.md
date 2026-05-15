@@ -1,30 +1,5 @@
 master ![build status](https://github.com/dovry/Auxillio/actions/workflows/build.yml/badge.svg?branch=master) dev ![build status](https://github.com/dovry/Auxillio/actions/workflows/build.yml/badge.svg?branch=dev)
 
-Installation information
-=======
-
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
-
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
-
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
-
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
-
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
-
 Auxillio Features (Current)
 ==========
 This mod currently focuses on mouse/item interaction quality-of-life in inventory and crafting screens.
@@ -62,6 +37,13 @@ This mod currently focuses on mouse/item interaction quality-of-life in inventor
   - When enabled, RMB drag replaces vanilla drag behavior.
   - Re-entering a slot during the same drag places another item there.
 
+  ![rmb_drag_increment](images/rmb_drag_increment.gif)
+
 - Debug logging:
   - Config option: `debugMouseTweaks`.
   - When enabled, detailed mouse tweak traces are logged with `[MouseTweaks]` in `run/logs/latest.log`.
+
+Additional Resources:
+==========
+Community Documentation: https://docs.neoforged.net/  
+NeoForged Discord: https://discord.neoforged.net/

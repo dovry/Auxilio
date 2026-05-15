@@ -17,6 +17,8 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 public class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
+    /*
+    // neoforge examples
     public static final ModConfigSpec.BooleanValue LOG_DIRT_BLOCK = BUILDER
             .comment("Whether to log the dirt block on common setup")
             .define("logDirtBlock", true);
@@ -24,10 +26,6 @@ public class Config {
     public static final ModConfigSpec.IntValue MAGIC_NUMBER = BUILDER
             .comment("A magic number")
             .defineInRange("magicNumber", 42, 0, Integer.MAX_VALUE);
-
-    public static final ModConfigSpec.BooleanValue DEBUG_MOUSE_TWEAKS = BUILDER
-            .comment("Enable debug logging for mouse tweak actions (spread, drag, scroll)")
-            .define("debugMouseTweaks", false);
 
     public static final ModConfigSpec.ConfigValue<String> MAGIC_NUMBER_INTRODUCTION = BUILDER
             .comment("What you want the introduction message to be for the magic number")
@@ -37,6 +35,16 @@ public class Config {
     public static final ModConfigSpec.ConfigValue<List<? extends String>> ITEM_STRINGS = BUILDER
             .comment("A list of items to log on common setup.")
             .defineListAllowEmpty("items", List.of("minecraft:iron_ingot"), () -> "", Config::validateItemName);
+
+    */
+
+    public static final ModConfigSpec.BooleanValue DEBUG_MOUSE_TWEAKS = BUILDER
+            .comment("Enable debug logging for mouse tweak actions (spread, drag, scroll)")
+            .define("debugMouseTweaks", false);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_REPEAT_RIGHT_DRAG = BUILDER
+            .comment("Replace vanilla RMB drag with repeat-on-revisit behavior")
+            .define("enableRepeatRightDrag", true);
 
     static final ModConfigSpec SPEC = BUILDER.build();
 

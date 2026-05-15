@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.util.profiling.Profiler;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
@@ -27,6 +28,7 @@ import net.neoforged.neoforge.client.settings.KeyModifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -36,6 +38,7 @@ import java.util.Set;
 // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
 @EventBusSubscriber(modid = Auxillio.MODID, value = Dist.CLIENT)
 public class AuxillioClient {
+    private static final long SHIFT_DOUBLE_CLICK_WINDOW_MS = 300L;
     private static final KeyMapping.Category KEY_CATEGORY = new KeyMapping.Category(net.minecraft.resources.Identifier.fromNamespaceAndPath(Auxillio.MODID, "mouse_tweaks"));
     private static final KeyMapping SPREAD_IN_CRAFTING = new KeyMapping(
             "key.auxillio.spread_in_crafting",
@@ -54,6 +57,10 @@ public class AuxillioClient {
     );
     private static final Set<Integer> DRAGGED_SLOT_IDS = new HashSet<>();
     private static int activeDragContainerId = -1;
+    private static long lastShiftLeftClickAt = 0L;
+    private static ItemStack lastShiftLeftType = ItemStack.EMPTY;
+    private static boolean customRightDragActive = false;
+    private static int customRightDragLastSlot = -1;
 
     public AuxillioClient(IEventBus modEventBus, ModContainer container) {
         // Allows NeoForge to create a config screen for this mod's configs.
@@ -68,6 +75,7 @@ public class AuxillioClient {
         // Some client setup code
         Auxillio.LOGGER.info("HELLO FROM CLIENT SETUP");
         Auxillio.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+        Auxillio.LOGGER.info("MouseTweaks debug toggle (debugMouseTweaks) = {}", Config.DEBUG_MOUSE_TWEAKS.getAsBoolean());
     }
 
     static void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -81,16 +89,24 @@ public class AuxillioClient {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
-        if (!SPREAD_IN_CRAFTING.isActiveAndMatches(InputConstants.Type.MOUSE.getOrCreate(event.getButton()))) {
-            return;
-        }
-
         Minecraft mc = Minecraft.getInstance();
         if (mc.gameMode == null || mc.player == null) {
             return;
         }
 
         AbstractContainerMenu menu = screen.getMenu();
+
+        // Optional custom RMB drag mechanic: places once per slot entry, including revisits.
+        if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_RIGHT
+                && Config.ENABLE_REPEAT_RIGHT_DRAG.getAsBoolean()
+                && !menu.getCarried().isEmpty()) {
+            customRightDragActive = true;
+            customRightDragLastSlot = -1;
+            // Do not cancel press: keep vanilla single right-click behavior intact.
+            debug("customRmbDrag start carried={}", menu.getCarried().getCount());
+            return;
+        }
+
         if (!(menu instanceof InventoryMenu) && !(menu instanceof CraftingMenu)) {
             return;
         }
@@ -100,14 +116,35 @@ public class AuxillioClient {
         }
 
         Slot sourceSlot = screen.getHoveredSlot();
-        if (sourceSlot == null || !sourceSlot.hasItem()) {
+        if (sourceSlot == null) {
             return;
         }
 
-        if (!spreadInCrafting(menu, sourceSlot, mc)) {
-            return;
+        boolean handled = false;
+        if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && event.getMouseButtonEvent().hasShiftDown()
+                && isPlayerInventorySlot(menu, sourceSlot, mc.player.getInventory())) {
+            long now = System.currentTimeMillis();
+            boolean withinWindow = now - lastShiftLeftClickAt <= SHIFT_DOUBLE_CLICK_WINDOW_MS;
+            boolean vanillaDouble = event.isDoubleClick();
+            if ((withinWindow || vanillaDouble) && !lastShiftLeftType.isEmpty()) {
+                handled = quickMoveAllOfTypeFromPlayer(menu, lastShiftLeftType.copyWithCount(1), mc);
+                debug("shiftDoubleLeft trigger window={}ms vanillaDouble={} type={} handled={}",
+                        now - lastShiftLeftClickAt, vanillaDouble, lastShiftLeftType.getItem(), handled);
+                lastShiftLeftClickAt = 0L;
+                lastShiftLeftType = ItemStack.EMPTY;
+            } else if (sourceSlot.hasItem()) {
+                lastShiftLeftClickAt = now;
+                lastShiftLeftType = sourceSlot.getItem().copyWithCount(1);
+                debug("shiftDoubleLeft armed slot={} type={}", sourceSlot.index, lastShiftLeftType.getItem());
+            }
+        } else if (matchesSpreadMouse(event) && isCraftSlot(menu, sourceSlot)) {
+            handled = sortCraftGrid(menu, mc);
         }
-        event.setCanceled(true);
+
+        if (handled) {
+            event.setCanceled(true);
+        }
     }
 
     @SubscribeEvent
@@ -115,7 +152,7 @@ public class AuxillioClient {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
-        if (!SPREAD_IN_CRAFTING.isActiveAndMatches(InputConstants.getKey(event.getKeyEvent()))) {
+        if (!matchesSpreadKey(event)) {
             return;
         }
 
@@ -133,15 +170,18 @@ public class AuxillioClient {
         }
 
         Slot sourceSlot = screen.getHoveredSlot();
-        if (sourceSlot == null || !sourceSlot.hasItem()) {
+        if (sourceSlot == null) {
             return;
         }
 
-        if (!spreadInCrafting(menu, sourceSlot, mc)) {
-            return;
+        boolean handled = false;
+        if (isCraftSlot(menu, sourceSlot)) {
+            handled = sortCraftGrid(menu, mc);
         }
 
-        event.setCanceled(true);
+        if (handled) {
+            event.setCanceled(true);
+        }
     }
 
     @SubscribeEvent
@@ -149,6 +189,42 @@ public class AuxillioClient {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
+        if (customRightDragActive && event.getMouseButton() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.gameMode == null || mc.player == null) {
+                return;
+            }
+
+            AbstractContainerMenu menu = screen.getMenu();
+            ItemStack carried = menu.getCarried();
+            Slot hovered = screen.getHoveredSlot();
+
+            if (hovered == null) {
+                // Reset so re-entering the same slot can place again.
+                customRightDragLastSlot = -1;
+                event.setCanceled(true);
+                return;
+            }
+
+            if (carried.isEmpty()) {
+                customRightDragActive = false;
+                customRightDragLastSlot = -1;
+                return;
+            }
+
+            // Simulate one right-click for each new hovered slot in this drag pass.
+            if (hovered.index != customRightDragLastSlot) {
+                if (canIncrementSameStack(hovered, carried)) {
+                    click(menu, hovered, 1, ContainerInput.PICKUP, mc);
+                    debug("customRmbDrag increment slot={} remaining={}", hovered.index, menu.getCarried().getCount());
+                }
+                customRightDragLastSlot = hovered.index;
+            }
+
+            event.setCanceled(true);
+            return;
+        }
+
         if (!DRAG_QUICK_MOVE.isActiveAndMatches(InputConstants.Type.MOUSE.getOrCreate(event.getMouseButton()))) {
             return;
         }
@@ -179,6 +255,13 @@ public class AuxillioClient {
 
     @SubscribeEvent
     static void onMouseReleased(ScreenEvent.MouseButtonReleased.Pre event) {
+        if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_RIGHT && customRightDragActive) {
+            customRightDragActive = false;
+            customRightDragLastSlot = -1;
+            // Do not cancel release: keep vanilla RMB interactions functional.
+            debug("customRmbDrag end");
+            return;
+        }
         if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             DRAGGED_SLOT_IDS.clear();
             activeDragContainerId = -1;
@@ -220,7 +303,9 @@ public class AuxillioClient {
     }
 
     private static boolean sendOneToPlayerInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
-        if (!hovered.hasItem() || !menu.getCarried().isEmpty() || isPlayerInventorySlot(hovered, mc.player.getInventory())) {
+        Profiler.get().push("auxillio_scroll_down_one_to_player");
+        try {
+        if (!hovered.hasItem() || !menu.getCarried().isEmpty() || isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
             return false;
         }
 
@@ -235,9 +320,14 @@ public class AuxillioClient {
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
         debug("scrollDown moved one item from slot {} to player slot {}", hovered.index, target.index);
         return true;
+        } finally {
+            Profiler.get().pop();
+        }
     }
 
     private static boolean sendOneToOppositeInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        Profiler.get().push("auxillio_scroll_up_one_to_container");
+        try {
         if (!hovered.hasItem() || !menu.getCarried().isEmpty()) {
             return false;
         }
@@ -253,17 +343,20 @@ public class AuxillioClient {
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
         debug("scrollUp moved one item from slot {} to slot {}", hovered.index, target.index);
         return true;
+        } finally {
+            Profiler.get().pop();
+        }
     }
 
     private static Slot findSingleItemTarget(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
-        boolean sourceIsPlayer = isPlayerInventorySlot(sourceSlot, playerInventory);
+        boolean sourceIsPlayer = isPlayerInventorySlot(menu, sourceSlot, playerInventory);
         Slot emptyCandidate = null;
 
         for (Slot slot : menu.slots) {
             if (slot == null || slot == sourceSlot || !slot.isActive()) {
                 continue;
             }
-            if (isPlayerInventorySlot(slot, playerInventory) == sourceIsPlayer) {
+            if (isPlayerInventorySlot(menu, slot, playerInventory) == sourceIsPlayer) {
                 continue;
             }
             if (!slot.mayPlace(sourceStack)) {
@@ -287,7 +380,7 @@ public class AuxillioClient {
         Slot emptyCandidate = null;
 
         for (Slot slot : menu.slots) {
-            if (slot == null || slot == sourceSlot || !slot.isActive() || !isPlayerInventorySlot(slot, playerInventory)) {
+            if (slot == null || slot == sourceSlot || !slot.isActive() || !isPlayerInventorySlot(menu, slot, playerInventory)) {
                 continue;
             }
             if (!slot.mayPlace(sourceStack)) {
@@ -307,24 +400,92 @@ public class AuxillioClient {
         return emptyCandidate;
     }
 
-    private static boolean isPlayerInventorySlot(Slot slot, Inventory inventory) {
-        return slot.container == inventory;
+    private static boolean isPlayerInventorySlot(AbstractContainerMenu menu, Slot slot, Inventory inventory) {
+        // Preferred check when slot container identity matches player inventory.
+        if (slot.container == inventory) {
+            return true;
+        }
+        // Fallback by index layout for menus that wrap slot containers differently.
+        if (menu instanceof InventoryMenu) {
+            return slot.index >= 9 && slot.index <= 45;
+        }
+        if (menu instanceof CraftingMenu) {
+            return slot.index >= 10 && slot.index <= 45;
+        }
+        int playerStart = Math.max(0, menu.slots.size() - 36);
+        return slot.index >= playerStart;
     }
 
-    private static boolean spreadInCrafting(AbstractContainerMenu menu, Slot sourceSlot, Minecraft mc) {
-        ItemStack sourceStack = sourceSlot.getItem();
-        if (sourceStack.isEmpty()) {
+    private static boolean sortCraftGrid(AbstractContainerMenu menu, Minecraft mc) {
+        Profiler.get().push("auxillio_sort_craft_grid");
+        try {
+        List<Slot> craftSlots = getCraftSlots(menu);
+        List<ItemStack> types = getDistinctTypesInCraftGrid(craftSlots);
+        if (types.isEmpty()) {
             return false;
         }
 
-        List<Slot> craftSlots = menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots();
+        debug("sortGrid start types={} counts={}", types.size(), craftGridCountsAll(craftSlots));
+        if (types.size() == 1) {
+            // Single-type mode: spread across all craft slots that can accept this type.
+            rebalanceCraftGridForType(menu, craftSlots, types.get(0), true, mc);
+        } else {
+            // Mixed-type semantics: equalize each type inside its current footprint (slots containing that type).
+            // This preserves type groups and avoids cross-type displacement.
+            for (ItemStack type : types) {
+                rebalanceCraftGridForType(menu, craftSlots, type, false, mc);
+            }
+        }
+        debug("sortGrid end counts={}", craftGridCountsAll(craftSlots));
+        return true;
+        } finally {
+            Profiler.get().pop();
+        }
+    }
+
+    private static boolean quickMoveAllOfTypeFromPlayer(AbstractContainerMenu menu, ItemStack sourceType, Minecraft mc) {
+        Profiler.get().push("auxillio_shift_double_click_quick_move_all");
+        try {
+        if (sourceType.isEmpty()) {
+            return false;
+        }
+
+        int moved = 0;
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Slot slot : menu.slots) {
+                if (slot == null || !slot.isActive() || !slot.hasItem() || !isPlayerInventorySlot(menu, slot, mc.player.getInventory())) {
+                    continue;
+                }
+                if (!ItemStack.isSameItemSameComponents(slot.getItem(), sourceType)) {
+                    continue;
+                }
+                int before = slot.getItem().getCount();
+                click(menu, slot, 0, ContainerInput.QUICK_MOVE, mc);
+                int after = slot.getItem().getCount();
+                if (after < before) {
+                    moved += (before - after);
+                    changed = true;
+                }
+            }
+        }
+
+        debug("shiftDoubleLeft quickMoveAll type={} moved={}", sourceType.getItem(), moved);
+        return moved > 0;
+        } finally {
+            Profiler.get().pop();
+        }
+    }
+
+    private static boolean rebalanceCraftGridForType(AbstractContainerMenu menu, List<Slot> craftSlots, ItemStack type, boolean includeEmptySlots, Minecraft mc) {
         List<Slot> eligibleSlots = new ArrayList<>();
         for (Slot slot : craftSlots) {
-            if (!slot.isActive() || !slot.mayPlace(sourceStack)) {
+            if (!slot.isActive() || !slot.mayPlace(type)) {
                 continue;
             }
             ItemStack current = slot.getItem();
-            if (current.isEmpty() || ItemStack.isSameItemSameComponents(current, sourceStack)) {
+            if (ItemStack.isSameItemSameComponents(current, type) || (includeEmptySlots && current.isEmpty())) {
                 eligibleSlots.add(slot);
             }
         }
@@ -333,51 +494,28 @@ public class AuxillioClient {
             return false;
         }
 
-        boolean sourceInCraftGrid = craftSlots.contains(sourceSlot);
-        if (!sourceInCraftGrid) {
-            int containerId = menu.containerId;
-            debug("spread(start external) sourceSlot={} craftBefore={}", sourceSlot.index, craftGridCounts(craftSlots, sourceStack));
-            click(menu, sourceSlot, 0, ContainerInput.PICKUP, mc);
-            clickRaw(containerId, -999, AbstractContainerMenu.getQuickcraftMask(0, 0), ContainerInput.QUICK_CRAFT, mc);
-            for (Slot target : eligibleSlots) {
-                click(menu, target, AbstractContainerMenu.getQuickcraftMask(1, 0), ContainerInput.QUICK_CRAFT, mc);
-            }
-            clickRaw(containerId, -999, AbstractContainerMenu.getQuickcraftMask(2, 0), ContainerInput.QUICK_CRAFT, mc);
-            if (!menu.getCarried().isEmpty()) {
-                click(menu, sourceSlot, 0, ContainerInput.PICKUP, mc);
-            }
-            debug("spread(end external) sourceSlot={} craftAfter={}", sourceSlot.index, craftGridCounts(craftSlots, sourceStack));
-            return true;
-        }
-
         int total = 0;
-        List<Slot> sameItemSlots = new ArrayList<>();
         for (Slot slot : eligibleSlots) {
             ItemStack current = slot.getItem();
-            if (!current.isEmpty() && ItemStack.isSameItemSameComponents(current, sourceStack)) {
-                sameItemSlots.add(slot);
+            if (ItemStack.isSameItemSameComponents(current, type)) {
                 total += current.getCount();
             }
         }
-
-        if (total <= 0 || sameItemSlots.isEmpty()) {
+        if (total <= 0) {
             return false;
         }
-        debug("spread(start internal) sourceSlot={} total={} craftBefore={}", sourceSlot.index, total, craftGridCounts(craftSlots, sourceStack));
 
-        List<Integer> currentCounts = new ArrayList<>(eligibleSlots.size());
         int slotCount = eligibleSlots.size();
         int base = total / slotCount;
         int remainder = total % slotCount;
 
+        List<Integer> beforeCounts = craftGridCounts(craftSlots, type);
         List<Slot> donors = new ArrayList<>();
         List<Slot> receivers = new ArrayList<>();
         for (int i = 0; i < slotCount; i++) {
             Slot slot = eligibleSlots.get(i);
             ItemStack current = slot.getItem();
-            int count = !current.isEmpty() && ItemStack.isSameItemSameComponents(current, sourceStack) ? current.getCount() : 0;
-            currentCounts.add(count);
-
+            int count = !current.isEmpty() && ItemStack.isSameItemSameComponents(current, type) ? current.getCount() : 0;
             int desired = base + (i < remainder ? 1 : 0);
             if (count > desired) {
                 for (int j = 0; j < count - desired; j++) {
@@ -394,15 +532,47 @@ public class AuxillioClient {
             return true;
         }
 
+        // Keeps redistribution deterministic across repeated presses.
+        donors.sort(Comparator.comparingInt(s -> s.index));
+        receivers.sort(Comparator.comparingInt(s -> s.index));
+
         int moves = Math.min(donors.size(), receivers.size());
         for (int i = 0; i < moves; i++) {
-            Slot from = donors.get(i);
-            Slot to = receivers.get(i);
-            moveSingleItem(menu, from, to, mc);
+            moveSingleItem(menu, donors.get(i), receivers.get(i), mc);
         }
-        debug("spread(end internal) sourceSlot={} base={} rem={} moves={} craftAfter={}", sourceSlot.index, base, remainder, moves, craftGridCounts(craftSlots, sourceStack));
 
+        debug("rebalance type={} includeEmpty={} total={} base={} rem={} moves={} before/after={}/{}",
+                type.getItem(), includeEmptySlots, total, base, remainder, moves, beforeCounts, craftGridCounts(craftSlots, type));
         return true;
+    }
+
+    private static List<Slot> getCraftSlots(AbstractContainerMenu menu) {
+        return menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots();
+    }
+
+    private static boolean isCraftSlot(AbstractContainerMenu menu, Slot slot) {
+        return getCraftSlots(menu).contains(slot);
+    }
+
+    private static List<ItemStack> getDistinctTypesInCraftGrid(List<Slot> craftSlots) {
+        List<ItemStack> types = new ArrayList<>();
+        for (Slot slot : craftSlots) {
+            ItemStack current = slot.getItem();
+            if (current.isEmpty()) {
+                continue;
+            }
+            boolean seen = false;
+            for (ItemStack type : types) {
+                if (ItemStack.isSameItemSameComponents(type, current)) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                types.add(current.copyWithCount(1));
+            }
+        }
+        return types;
     }
 
     private static void moveSingleItem(AbstractContainerMenu menu, Slot from, Slot to, Minecraft mc) {
@@ -410,9 +580,21 @@ public class AuxillioClient {
             return;
         }
 
+        // Pickup full stack, place one with right click, then return the remainder.
         click(menu, from, 0, ContainerInput.PICKUP, mc);
         click(menu, to, 1, ContainerInput.PICKUP, mc);
         click(menu, from, 0, ContainerInput.PICKUP, mc);
+    }
+
+    private static boolean matchesSpreadMouse(ScreenEvent.MouseButtonPressed.Pre event) {
+        InputConstants.Key pressed = InputConstants.Type.MOUSE.getOrCreate(event.getButton());
+        // isActiveAndMatches handles vanilla keybind behavior; direct key compare keeps Shift+bind working.
+        return SPREAD_IN_CRAFTING.isActiveAndMatches(pressed) || SPREAD_IN_CRAFTING.getKey().equals(pressed);
+    }
+
+    private static boolean matchesSpreadKey(ScreenEvent.KeyPressed.Pre event) {
+        InputConstants.Key pressed = InputConstants.getKey(event.getKeyEvent());
+        return SPREAD_IN_CRAFTING.isActiveAndMatches(pressed) || SPREAD_IN_CRAFTING.getKey().equals(pressed);
     }
 
     private static void click(AbstractContainerMenu menu, Slot slot, int button, ContainerInput input, Minecraft mc) {
@@ -423,6 +605,20 @@ public class AuxillioClient {
         mc.gameMode.handleContainerInput(containerId, slotIndex, button, input, mc.player);
     }
 
+    private static boolean canIncrementSameStack(Slot slot, ItemStack carried) {
+        if (!slot.isActive() || !slot.mayPlace(carried)) {
+            return false;
+        }
+        ItemStack current = slot.getItem();
+        if (current.isEmpty()) {
+            return true;
+        }
+        if (!ItemStack.isSameItemSameComponents(current, carried)) {
+            return false;
+        }
+        return current.getCount() < slot.getMaxStackSize(current);
+    }
+
     private static List<Integer> craftGridCounts(List<Slot> craftSlots, ItemStack reference) {
         List<Integer> counts = new ArrayList<>(craftSlots.size());
         for (Slot slot : craftSlots) {
@@ -430,6 +626,45 @@ public class AuxillioClient {
             counts.add(!current.isEmpty() && ItemStack.isSameItemSameComponents(current, reference) ? current.getCount() : 0);
         }
         return counts;
+    }
+
+    private static List<String> craftGridCountsAll(List<Slot> craftSlots) {
+        List<String> out = new ArrayList<>(craftSlots.size());
+        for (Slot slot : craftSlots) {
+            ItemStack current = slot.getItem();
+            out.add(current.isEmpty() ? "empty" : current.getItem() + "x" + current.getCount());
+        }
+        return out;
+    }
+
+    private static Slot findPlayerSlotWithType(AbstractContainerMenu menu, ItemStack type, Inventory inventory) {
+        for (Slot slot : menu.slots) {
+            if (slot == null || !slot.isActive() || !isPlayerInventorySlot(menu, slot, inventory) || !slot.hasItem()) {
+                continue;
+            }
+            if (ItemStack.isSameItemSameComponents(slot.getItem(), type)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private static Slot findSingleItemTargetInCraftGrid(List<Slot> craftSlots, ItemStack sourceStack) {
+        Slot emptyCandidate = null;
+        for (Slot slot : craftSlots) {
+            if (!slot.isActive() || !slot.mayPlace(sourceStack)) {
+                continue;
+            }
+            ItemStack current = slot.getItem();
+            if (!current.isEmpty()) {
+                if (ItemStack.isSameItemSameComponents(current, sourceStack) && current.getCount() < slot.getMaxStackSize(current)) {
+                    return slot;
+                }
+            } else if (emptyCandidate == null) {
+                emptyCandidate = slot;
+            }
+        }
+        return emptyCandidate;
     }
 
     private static void debug(String message, Object... args) {

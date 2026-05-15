@@ -11,6 +11,7 @@
   "auxillio.configuration.magicNumberIntroduction": "Magic Number Text",
   "auxillio.configuration.magicNumber": "Magic Number",
   "auxillio.configuration.debugMouseTweaks": "Debug Mouse Tweaks",
+  "auxillio.configuration.enableRepeatRightDrag": "Enable Repeat Right Drag",
 
   "key.category.auxillio.mouse_tweaks": "Auxillio Mouse Tweaks",
   "key.auxillio.spread_in_crafting": "Spread In Crafting Grid",
