@@ -1,7 +1,7 @@
 master ![build status](https://github.com/dovry/Auxilio/actions/workflows/build.yml/badge.svg?branch=master) dev ![build status](https://github.com/dovry/Auxilio/actions/workflows/build.yml/badge.svg?branch=dev)
 
 #  Features
-==========
+
 This mod currently focuses on mouse/item interaction quality-of-life in inventory and crafting screens.
 
 All options can be toggled on/off via in-game mod config menu, or root Minecraft directory config file
