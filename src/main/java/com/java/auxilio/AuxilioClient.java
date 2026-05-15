@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.util.profiling.Profiler;
+import net.minecraft.world.inventory.AbstractFurnaceMenu;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
@@ -298,6 +299,17 @@ public class AuxilioClient {
             return;
         }
 
+        if (Config.ENABLE_SHIFT_SCROLL_FURNACE_FUEL.getAsBoolean()
+                && isShiftHeld(mc)
+                && menu instanceof AbstractFurnaceMenu
+                && isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
+            boolean fuelHandled = sendOneToFurnaceFuelSlot(menu, hovered, mc);
+            if (fuelHandled) {
+                event.setCanceled(true);
+                return;
+            }
+        }
+
         boolean handled;
         if (deltaY > 0) {
             handled = sendOneToOppositeInventory(menu, hovered, mc);
@@ -351,6 +363,38 @@ public class AuxilioClient {
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
         debug("scrollUp moved one item from slot {} to slot {}", hovered.index, target.index);
         return true;
+        } finally {
+            Profiler.get().pop();
+        }
+    }
+
+    private static boolean sendOneToFurnaceFuelSlot(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        Profiler.get().push("auxilio_shift_scroll_one_to_furnace_fuel");
+        try {
+            if (!hovered.hasItem() || !menu.getCarried().isEmpty() || menu.slots.size() <= 1) {
+                return false;
+            }
+
+            Slot fuelSlot = menu.slots.get(1);
+            if (fuelSlot == null || !fuelSlot.isActive()) {
+                return false;
+            }
+
+            ItemStack source = hovered.getItem();
+            if (!fuelSlot.mayPlace(source)) {
+                return false;
+            }
+
+            ItemStack current = fuelSlot.getItem();
+            if (!current.isEmpty() && (!ItemStack.isSameItemSameComponents(current, source) || current.getCount() >= fuelSlot.getMaxStackSize(current))) {
+                return false;
+            }
+
+            click(menu, hovered, 0, ContainerInput.PICKUP, mc);
+            click(menu, fuelSlot, 1, ContainerInput.PICKUP, mc);
+            click(menu, hovered, 0, ContainerInput.PICKUP, mc);
+            debug("shiftScroll moved one item from slot {} to furnace fuel slot {}", hovered.index, fuelSlot.index);
+            return true;
         } finally {
             Profiler.get().pop();
         }
@@ -615,6 +659,11 @@ public class AuxilioClient {
 
     private static void clickRaw(int containerId, int slotIndex, int button, ContainerInput input, Minecraft mc) {
         mc.gameMode.handleContainerInput(containerId, slotIndex, button, input, mc.player);
+    }
+
+    private static boolean isShiftHeld(Minecraft mc) {
+        return InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
+                || InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     private static boolean canIncrementSameStack(Slot slot, ItemStack carried) {

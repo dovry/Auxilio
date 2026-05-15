@@ -10,7 +10,7 @@ plugins {
 
 // Release/version source of truth for this repo.
 // Bump this for each release and keep gradle.properties:mod_version in sync.
-ext.release_version = '1.0.0'
+ext.release_version = '1.1.0'
 
 // Ensure all projects can reference the release version.
 gradle.beforeProject { p ->

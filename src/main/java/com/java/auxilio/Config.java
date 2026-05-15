@@ -62,6 +62,10 @@ public class Config {
             .comment("Enable scroll up/down single-item transfer behavior")
             .define("enableScrollTransfer", true);
 
+    public static final ModConfigSpec.BooleanValue ENABLE_SHIFT_SCROLL_FURNACE_FUEL = BUILDER
+            .comment("Enable shift + scroll to prioritize furnace fuel slot")
+            .define("enableShiftScrollFurnaceFuel", true);
+
     static final ModConfigSpec SPEC = BUILDER.build();
 
     private static boolean validateItemName(final Object obj) {
