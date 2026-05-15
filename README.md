@@ -33,24 +33,34 @@ This mod currently focuses on mouse/item interaction quality-of-life in inventor
   - Middle click on any crafting slot (2x2 or 3x3) sorts the grid.
     - Single-item-type grids are spread as evenly as possible across all valid crafting slots.
     
-		![single type slots](images/item_spread.mp4 "Single item type spread")
+  - ![item spread](images/item_spread.gif)
     
 	- Mixed-item grids use type-local balancing: each type is equalized within the slots that already contain that type.
 	
-		![mixed slots](images/mixed_items.mp4 "Mixed item type spread")
+  - ![mixed items 1](images/mixed_items1.gif)
 		
-		![mixed slots 2](images/mixed_items.mp4 "Mixed item type spread 2")
+  - ![mixed items 2](images/mixed_items2.gif)
 
-- Shift + middle click deposit:
-  - Shift + middle click on an inventory slot pushes all items of that same type from player inventory into the crafting grid (as space allows), then equalizes that type in the grid.
+- Shift + double left-click bulk transfer:
+  - Shift + double left-click on a player-inventory slot quick-moves all matching items from player inventory into the currently open container (for example chest or crafting table inventory), as allowed by slot rules.
+
+  - ![quick deposit all](images/doubleclick_quick_deposit.gif)
 
 - Shift + drag quick move:
-  - Hold Shift and drag left-click across slots to quick-move hovered stacks.
-  - Each hovered slot is clicked at most once per drag stroke to avoid repeated click spam.
+  - Hold Shift and drag left-click across slots to quick-move hovered stacks. Each hovered slot is clicked at most once per drag stroke to avoid repeated click spam.
+    
+  - ![drag quick move](images/shift_hover_quickmove.gif)
 
 - Scroll transfer:
   - Scroll up: move 1 item from hovered slot toward the opposite inventory side.
   - Scroll down: move 1 item from hovered non-player slot into player inventory.
+
+  - ![scroll items](images/scroll_items.gif)
+
+- Repeat right-drag (optional):
+  - Config option: `enableRepeatRightDrag` (default `true`).
+  - When enabled, RMB drag replaces vanilla drag behavior.
+  - Re-entering a slot during the same drag places another item there.
 
 - Debug logging:
   - Config option: `debugMouseTweaks`.
