@@ -46,6 +46,12 @@ Scroll down: move 1 item from hovered non-player slot into player inventory.
 
 ![scroll deposit](https://github.com/dovry/Auxilio/blob/master/images/scroll_items.gif?raw=true)
 
+### Furnace fuel scroll
+
+Scrolling items into furnaces will deposit almost anything into the top slot. Shift scroll up will scroll items into the fuel slot instead
+
+!(furnace scroll)[https://github.com/dovry/Auxilio/blob/master/images/furnace_scroll.gif?raw=true]
+
 ## Repeat right-drag:
 
 Config option: `enableRepeatRightDrag` (default `true`).
@@ -71,7 +77,6 @@ Re-entering a slot during the same drag places another item there.
 - Bump version in `settings.gradle` (`ext.release_version`).
 - Keep `gradle.properties` `mod_version` aligned with the same value.
 - Commit and tag (for example `v1.0.0`).
-- Create a GitHub Release from that tag.
 - The `Release Jar` workflow will build and attach `build/jar/*.jar` to the release.
 
 # Additional Resources:
