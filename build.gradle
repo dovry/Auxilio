@@ -184,8 +184,11 @@ tasks.register("buildModJar", Copy) {
     description = "Builds the mod jar and copies it to build/jar for easy pickup."
     dependsOn tasks.named("jar")
     from(tasks.named("jar"))
+    def distModId = project.property("mod_id").toString()
+    def distMinecraftVersion = project.property("minecraft_version").toString()
+    def distNeoVersion = project.property("neo_version").toString()
     rename { _ ->
-        "${mod_id}-${minecraft_version}-${neo_version}.jar"
+        "${distModId}-${distMinecraftVersion}-${distNeoVersion}.jar"
     }
     into(jarOutputDir)
 }
