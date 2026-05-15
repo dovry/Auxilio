@@ -6,6 +6,7 @@ on:
       - '**'
     paths-ignore:
       - 'README.md'
+      - '**.gif'
   pull_request:
   workflow_dispatch:
 
