@@ -184,6 +184,9 @@ tasks.register("buildModJar", Copy) {
     description = "Builds the mod jar and copies it to build/jar for easy pickup."
     dependsOn tasks.named("jar")
     from(tasks.named("jar"))
+    rename { _ ->
+        "${mod_id}-${minecraft_version}-${neo_version}.jar"
+    }
     into(jarOutputDir)
 }
 
