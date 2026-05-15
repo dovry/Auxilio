@@ -1,3 +1,6 @@
+master ![build status](https://github.com/dovry/Auxillio/actions/workflows/build.yml/badge.svg?branch=master) dev ![build status](https://github.com/dovry/Auxillio/actions/workflows/build.yml/badge.svg?branch=dev)
+
+
 
 Installation information
 =======

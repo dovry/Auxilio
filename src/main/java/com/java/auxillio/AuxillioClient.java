@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.CraftingMenu;
@@ -103,22 +104,41 @@ public class AuxillioClient {
             return;
         }
 
-        ItemStack sourceStack = sourceSlot.getItem();
-        List<Slot> targets = collectCraftingTargets(menu, sourceStack);
-        if (targets.isEmpty()) {
+        if (!spreadInCrafting(menu, sourceSlot, mc)) {
+            return;
+        }
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent
+    static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
+            return;
+        }
+        if (!SPREAD_IN_CRAFTING.isActiveAndMatches(InputConstants.getKey(event.getKeyEvent()))) {
             return;
         }
 
-        int containerId = menu.containerId;
-        mc.gameMode.handleContainerInput(containerId, sourceSlot.index, 0, ContainerInput.PICKUP, mc.player);
-        mc.gameMode.handleContainerInput(containerId, -999, AbstractContainerMenu.getQuickcraftMask(0, 0), ContainerInput.QUICK_CRAFT, mc.player);
-        for (Slot target : targets) {
-            mc.gameMode.handleContainerInput(containerId, target.index, AbstractContainerMenu.getQuickcraftMask(1, 0), ContainerInput.QUICK_CRAFT, mc.player);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gameMode == null || mc.player == null) {
+            return;
         }
-        mc.gameMode.handleContainerInput(containerId, -999, AbstractContainerMenu.getQuickcraftMask(2, 0), ContainerInput.QUICK_CRAFT, mc.player);
 
+        AbstractContainerMenu menu = screen.getMenu();
+        if (!(menu instanceof InventoryMenu) && !(menu instanceof CraftingMenu)) {
+            return;
+        }
         if (!menu.getCarried().isEmpty()) {
-            mc.gameMode.handleContainerInput(containerId, sourceSlot.index, 0, ContainerInput.PICKUP, mc.player);
+            return;
+        }
+
+        Slot sourceSlot = screen.getHoveredSlot();
+        if (sourceSlot == null || !sourceSlot.hasItem()) {
+            return;
+        }
+
+        if (!spreadInCrafting(menu, sourceSlot, mc)) {
+            return;
         }
 
         event.setCanceled(true);
@@ -165,21 +185,256 @@ public class AuxillioClient {
         }
     }
 
-    private static List<Slot> collectCraftingTargets(AbstractContainerMenu menu, ItemStack sourceStack) {
-        List<Slot> targets = new ArrayList<>();
-        for (Slot slot : menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots()) {
+    @SubscribeEvent
+    static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre event) {
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
+            return;
+        }
+
+        double deltaY = event.getScrollDeltaY();
+        if (deltaY == 0.0D) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gameMode == null || mc.player == null) {
+            return;
+        }
+
+        AbstractContainerMenu menu = screen.getMenu();
+        Slot hovered = screen.getHoveredSlot();
+        if (hovered == null) {
+            return;
+        }
+
+        boolean handled;
+        if (deltaY > 0) {
+            handled = sendOneToOppositeInventory(menu, hovered, mc);
+        } else {
+            handled = sendOneToPlayerInventory(menu, hovered, mc);
+        }
+
+        if (handled) {
+            event.setCanceled(true);
+        }
+    }
+
+    private static boolean sendOneToPlayerInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        if (!hovered.hasItem() || !menu.getCarried().isEmpty() || isPlayerInventorySlot(hovered, mc.player.getInventory())) {
+            return false;
+        }
+
+        ItemStack source = hovered.getItem();
+        Slot target = findSingleItemTargetInPlayerInventory(menu, hovered, source, mc.player.getInventory());
+        if (target == null) {
+            return false;
+        }
+
+        click(menu, hovered, 0, ContainerInput.PICKUP, mc);
+        click(menu, target, 1, ContainerInput.PICKUP, mc);
+        click(menu, hovered, 0, ContainerInput.PICKUP, mc);
+        debug("scrollDown moved one item from slot {} to player slot {}", hovered.index, target.index);
+        return true;
+    }
+
+    private static boolean sendOneToOppositeInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        if (!hovered.hasItem() || !menu.getCarried().isEmpty()) {
+            return false;
+        }
+
+        ItemStack source = hovered.getItem();
+        Slot target = findSingleItemTarget(menu, hovered, source, mc.player.getInventory());
+        if (target == null) {
+            return false;
+        }
+
+        click(menu, hovered, 0, ContainerInput.PICKUP, mc);
+        click(menu, target, 1, ContainerInput.PICKUP, mc);
+        click(menu, hovered, 0, ContainerInput.PICKUP, mc);
+        debug("scrollUp moved one item from slot {} to slot {}", hovered.index, target.index);
+        return true;
+    }
+
+    private static Slot findSingleItemTarget(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
+        boolean sourceIsPlayer = isPlayerInventorySlot(sourceSlot, playerInventory);
+        Slot emptyCandidate = null;
+
+        for (Slot slot : menu.slots) {
+            if (slot == null || slot == sourceSlot || !slot.isActive()) {
+                continue;
+            }
+            if (isPlayerInventorySlot(slot, playerInventory) == sourceIsPlayer) {
+                continue;
+            }
+            if (!slot.mayPlace(sourceStack)) {
+                continue;
+            }
+
+            ItemStack current = slot.getItem();
+            if (!current.isEmpty()) {
+                if (ItemStack.isSameItemSameComponents(current, sourceStack) && current.getCount() < slot.getMaxStackSize(current)) {
+                    return slot;
+                }
+            } else if (emptyCandidate == null) {
+                emptyCandidate = slot;
+            }
+        }
+
+        return emptyCandidate;
+    }
+
+    private static Slot findSingleItemTargetInPlayerInventory(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
+        Slot emptyCandidate = null;
+
+        for (Slot slot : menu.slots) {
+            if (slot == null || slot == sourceSlot || !slot.isActive() || !isPlayerInventorySlot(slot, playerInventory)) {
+                continue;
+            }
+            if (!slot.mayPlace(sourceStack)) {
+                continue;
+            }
+
+            ItemStack current = slot.getItem();
+            if (!current.isEmpty()) {
+                if (ItemStack.isSameItemSameComponents(current, sourceStack) && current.getCount() < slot.getMaxStackSize(current)) {
+                    return slot;
+                }
+            } else if (emptyCandidate == null) {
+                emptyCandidate = slot;
+            }
+        }
+
+        return emptyCandidate;
+    }
+
+    private static boolean isPlayerInventorySlot(Slot slot, Inventory inventory) {
+        return slot.container == inventory;
+    }
+
+    private static boolean spreadInCrafting(AbstractContainerMenu menu, Slot sourceSlot, Minecraft mc) {
+        ItemStack sourceStack = sourceSlot.getItem();
+        if (sourceStack.isEmpty()) {
+            return false;
+        }
+
+        List<Slot> craftSlots = menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots();
+        List<Slot> eligibleSlots = new ArrayList<>();
+        for (Slot slot : craftSlots) {
             if (!slot.isActive() || !slot.mayPlace(sourceStack)) {
                 continue;
             }
             ItemStack current = slot.getItem();
-            if (current.isEmpty()) {
-                targets.add(slot);
-                continue;
-            }
-            if (ItemStack.isSameItemSameComponents(current, sourceStack) && current.getCount() < slot.getMaxStackSize(current)) {
-                targets.add(slot);
+            if (current.isEmpty() || ItemStack.isSameItemSameComponents(current, sourceStack)) {
+                eligibleSlots.add(slot);
             }
         }
-        return targets;
+
+        if (eligibleSlots.isEmpty()) {
+            return false;
+        }
+
+        boolean sourceInCraftGrid = craftSlots.contains(sourceSlot);
+        if (!sourceInCraftGrid) {
+            int containerId = menu.containerId;
+            debug("spread(start external) sourceSlot={} craftBefore={}", sourceSlot.index, craftGridCounts(craftSlots, sourceStack));
+            click(menu, sourceSlot, 0, ContainerInput.PICKUP, mc);
+            clickRaw(containerId, -999, AbstractContainerMenu.getQuickcraftMask(0, 0), ContainerInput.QUICK_CRAFT, mc);
+            for (Slot target : eligibleSlots) {
+                click(menu, target, AbstractContainerMenu.getQuickcraftMask(1, 0), ContainerInput.QUICK_CRAFT, mc);
+            }
+            clickRaw(containerId, -999, AbstractContainerMenu.getQuickcraftMask(2, 0), ContainerInput.QUICK_CRAFT, mc);
+            if (!menu.getCarried().isEmpty()) {
+                click(menu, sourceSlot, 0, ContainerInput.PICKUP, mc);
+            }
+            debug("spread(end external) sourceSlot={} craftAfter={}", sourceSlot.index, craftGridCounts(craftSlots, sourceStack));
+            return true;
+        }
+
+        int total = 0;
+        List<Slot> sameItemSlots = new ArrayList<>();
+        for (Slot slot : eligibleSlots) {
+            ItemStack current = slot.getItem();
+            if (!current.isEmpty() && ItemStack.isSameItemSameComponents(current, sourceStack)) {
+                sameItemSlots.add(slot);
+                total += current.getCount();
+            }
+        }
+
+        if (total <= 0 || sameItemSlots.isEmpty()) {
+            return false;
+        }
+        debug("spread(start internal) sourceSlot={} total={} craftBefore={}", sourceSlot.index, total, craftGridCounts(craftSlots, sourceStack));
+
+        List<Integer> currentCounts = new ArrayList<>(eligibleSlots.size());
+        int slotCount = eligibleSlots.size();
+        int base = total / slotCount;
+        int remainder = total % slotCount;
+
+        List<Slot> donors = new ArrayList<>();
+        List<Slot> receivers = new ArrayList<>();
+        for (int i = 0; i < slotCount; i++) {
+            Slot slot = eligibleSlots.get(i);
+            ItemStack current = slot.getItem();
+            int count = !current.isEmpty() && ItemStack.isSameItemSameComponents(current, sourceStack) ? current.getCount() : 0;
+            currentCounts.add(count);
+
+            int desired = base + (i < remainder ? 1 : 0);
+            if (count > desired) {
+                for (int j = 0; j < count - desired; j++) {
+                    donors.add(slot);
+                }
+            } else if (count < desired) {
+                for (int j = 0; j < desired - count; j++) {
+                    receivers.add(slot);
+                }
+            }
+        }
+
+        if (donors.isEmpty() || receivers.isEmpty()) {
+            return true;
+        }
+
+        int moves = Math.min(donors.size(), receivers.size());
+        for (int i = 0; i < moves; i++) {
+            Slot from = donors.get(i);
+            Slot to = receivers.get(i);
+            moveSingleItem(menu, from, to, mc);
+        }
+        debug("spread(end internal) sourceSlot={} base={} rem={} moves={} craftAfter={}", sourceSlot.index, base, remainder, moves, craftGridCounts(craftSlots, sourceStack));
+
+        return true;
+    }
+
+    private static void moveSingleItem(AbstractContainerMenu menu, Slot from, Slot to, Minecraft mc) {
+        if (from == to || !from.hasItem()) {
+            return;
+        }
+
+        click(menu, from, 0, ContainerInput.PICKUP, mc);
+        click(menu, to, 1, ContainerInput.PICKUP, mc);
+        click(menu, from, 0, ContainerInput.PICKUP, mc);
+    }
+
+    private static void click(AbstractContainerMenu menu, Slot slot, int button, ContainerInput input, Minecraft mc) {
+        clickRaw(menu.containerId, slot.index, button, input, mc);
+    }
+
+    private static void clickRaw(int containerId, int slotIndex, int button, ContainerInput input, Minecraft mc) {
+        mc.gameMode.handleContainerInput(containerId, slotIndex, button, input, mc.player);
+    }
+
+    private static List<Integer> craftGridCounts(List<Slot> craftSlots, ItemStack reference) {
+        List<Integer> counts = new ArrayList<>(craftSlots.size());
+        for (Slot slot : craftSlots) {
+            ItemStack current = slot.getItem();
+            counts.add(!current.isEmpty() && ItemStack.isSameItemSameComponents(current, reference) ? current.getCount() : 0);
+        }
+        return counts;
+    }
+
+    private static void debug(String message, Object... args) {
+        if (Config.DEBUG_MOUSE_TWEAKS.getAsBoolean()) {
+            Auxillio.LOGGER.info("[MouseTweaks] " + message, args);
+        }
     }
 }

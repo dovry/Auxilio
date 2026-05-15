@@ -25,6 +25,10 @@ public class Config {
             .comment("A magic number")
             .defineInRange("magicNumber", 42, 0, Integer.MAX_VALUE);
 
+    public static final ModConfigSpec.BooleanValue DEBUG_MOUSE_TWEAKS = BUILDER
+            .comment("Enable debug logging for mouse tweak actions (spread, drag, scroll)")
+            .define("debugMouseTweaks", false);
+
     public static final ModConfigSpec.ConfigValue<String> MAGIC_NUMBER_INTRODUCTION = BUILDER
             .comment("What you want the introduction message to be for the magic number")
             .define("magicNumberIntroduction", "The magic number is... ");
