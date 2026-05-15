@@ -1,7 +1,7 @@
 master ![build status](https://github.com/dovry/Auxilio/actions/workflows/build.yml/badge.svg?branch=master) dev ![build status](https://github.com/dovry/Auxilio/actions/workflows/build.yml/badge.svg?branch=dev)
 
 #  Features
-==========
+
 This mod currently focuses on mouse/item interaction quality-of-life in inventory and crafting screens.
 
 All options can be toggled on/off via in-game mod config menu, or root Minecraft directory config file
@@ -34,6 +34,7 @@ All options can be toggled on/off via in-game mod config menu, or root Minecraft
 ## Scroll transfer:
 
   Scroll up: move 1 item from hovered slot toward the opposite inventory side.
+  
   Scroll down: move 1 item from hovered non-player slot into player inventory.
 
 ![scroll items](images/scroll_items.gif)
