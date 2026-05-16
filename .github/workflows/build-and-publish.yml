@@ -140,12 +140,6 @@ jobs:
         run: |
           cp release-notes.md curseforge-changelog.md
           {
-            echo
-            echo "## README"
-            cat README.md
-          } >> curseforge-changelog.md
-
-          {
             echo "body<<EOF"
             cat curseforge-changelog.md
             echo "EOF"

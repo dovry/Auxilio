@@ -298,6 +298,10 @@ public class AuxilioClient {
         if (hovered == null) {
             return;
         }
+        if (mc.player.getAbilities().instabuild && !isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
+            debug("scroll skipped in creative for non-player slot {}", hovered.index);
+            return;
+        }
 
         if (Config.ENABLE_SHIFT_SCROLL_FURNACE_FUEL.getAsBoolean()
                 && isShiftHeld(mc)
