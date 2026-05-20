@@ -26,6 +26,8 @@ Mixed-item grids use type-local balancing: each type is equalized within the slo
 
 ![mixed items](https://github.com/dovry/Auxilio/blob/master/images/mixed_items1.gif?raw=true)
 
+![mod compatibility](https://github.com/dovry/Auxilio/blob/master/images/ae2_spread.gif?raw=true))
+
 ## Shift + double left-click bulk transfer:
 
 Shift + double left-click on a player-inventory slot quick-moves all matching items from player inventory into the currently open container (for example chest or crafting table inventory), as allowed by slot rules.
