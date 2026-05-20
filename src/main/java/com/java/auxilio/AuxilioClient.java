@@ -28,6 +28,7 @@ import net.neoforged.neoforge.client.settings.KeyConflictContext;
 import net.neoforged.neoforge.client.settings.KeyModifier;
 import org.lwjgl.glfw.GLFW;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -62,8 +63,14 @@ public class AuxilioClient {
     private static ItemStack lastShiftLeftType = ItemStack.EMPTY;
     private static boolean customRightDragActive = false;
     private static int customRightDragLastSlot = -1;
+    private static int pendingVirtualPullContainerId = -1;
+    private static int pendingVirtualPullSourceSlot = -1;
+    private static int pendingVirtualPullPreferredPlayerSlot = -1;
+    private static int pendingVirtualPullTicks = 0;
+    private static int pendingVirtualPullCleanupTicks = 0;
 
     public AuxilioClient(IEventBus modEventBus, ModContainer container) {
+        debug("enter AuxilioClient");
         // Allows NeoForge to create a config screen for this mod's configs.
         // The config screen is accessed by going to the Mods screen > clicking on your mod > clicking on config.
         // Do not forget to add translations for your config options to the en_us.json file.
@@ -73,6 +80,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
+        debug("enter onClientSetup");
         // Some client setup code
         Auxilio.LOGGER.info("HELLO FROM CLIENT SETUP");
         Auxilio.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
@@ -80,6 +88,7 @@ public class AuxilioClient {
     }
 
     static void registerKeyMappings(RegisterKeyMappingsEvent event) {
+        debug("enter registerKeyMappings");
         event.registerCategory(KEY_CATEGORY);
         event.register(SPREAD_IN_CRAFTING);
         event.register(DRAG_QUICK_MOVE);
@@ -87,6 +96,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
+        debug("enter onMousePressed");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -114,6 +124,7 @@ public class AuxilioClient {
         }
 
         boolean handled = false;
+        List<Slot> craftSlots = getCraftSlots(menu);
         if (Config.ENABLE_SHIFT_DOUBLE_CLICK_BULK_MOVE.getAsBoolean()
                 && event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
                 && event.getMouseButtonEvent().hasShiftDown()
@@ -133,13 +144,13 @@ public class AuxilioClient {
                 lastShiftLeftType = sourceSlot.getItem().copyWithCount(1);
                 debug("shiftDoubleLeft armed slot={} type={}", sourceSlot.index, lastShiftLeftType.getItem());
             }
-        } else if ((menu instanceof InventoryMenu || menu instanceof CraftingMenu)
+        } else if (!craftSlots.isEmpty()
                 && menu.getCarried().isEmpty()
                 && Config.ENABLE_SPREAD_SORT.getAsBoolean()
                 && isKeyFeatureEnabled(SPREAD_IN_CRAFTING)
                 && matchesSpreadMouse(event)
-                && isCraftSlot(menu, sourceSlot)) {
-            handled = sortCraftGrid(menu, mc);
+                && craftSlots.contains(sourceSlot)) {
+            handled = sortCraftGrid(menu, craftSlots, mc);
         }
 
         if (handled) {
@@ -149,6 +160,11 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        InputConstants.Key pressedKey = InputConstants.getKey(event.getKeyEvent());
+        if (pressedKey.equals(InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_LEFT_SHIFT))
+                || pressedKey.equals(InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_RIGHT_SHIFT))) {
+            return;
+        }
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -165,7 +181,7 @@ public class AuxilioClient {
         }
 
         AbstractContainerMenu menu = screen.getMenu();
-        if (!(menu instanceof InventoryMenu) && !(menu instanceof CraftingMenu)) {
+        if (!isSpreadSupportedMenu(menu)) {
             return;
         }
         if (!menu.getCarried().isEmpty()) {
@@ -177,9 +193,10 @@ public class AuxilioClient {
             return;
         }
 
+        List<Slot> craftSlots = getCraftSlots(menu);
         boolean handled = false;
-        if (isCraftSlot(menu, sourceSlot)) {
-            handled = sortCraftGrid(menu, mc);
+        if (craftSlots.contains(sourceSlot)) {
+            handled = sortCraftGrid(menu, craftSlots, mc);
         }
 
         if (handled) {
@@ -189,6 +206,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMouseDragged(ScreenEvent.MouseDragged.Pre event) {
+        debug("enter onMouseDragged");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -261,6 +279,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMouseReleased(ScreenEvent.MouseButtonReleased.Pre event) {
+        debug("enter onMouseReleased");
         if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_RIGHT && customRightDragActive) {
             customRightDragActive = false;
             customRightDragLastSlot = -1;
@@ -276,6 +295,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre event) {
+        debug("enter onMouseScrolled");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -298,6 +318,7 @@ public class AuxilioClient {
         if (hovered == null) {
             return;
         }
+        boolean hoveredIsPlayer = isPlayerInventorySlot(menu, hovered, mc.player.getInventory());
         if (mc.player.getAbilities().instabuild && !isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
             debug("scroll skipped in creative for non-player slot {}", hovered.index);
             return;
@@ -314,12 +335,9 @@ public class AuxilioClient {
             }
         }
 
-        boolean handled;
-        if (deltaY > 0) {
-            handled = sendOneToOppositeInventory(menu, hovered, mc);
-        } else {
-            handled = sendOneToPlayerInventory(menu, hovered, mc);
-        }
+        boolean handled = deltaY > 0
+                ? handleScrollUp(menu, hovered, hoveredIsPlayer, mc)
+                : handleScrollDown(menu, hovered, hoveredIsPlayer, mc);
 
         if (handled) {
             event.setCanceled(true);
@@ -327,8 +345,12 @@ public class AuxilioClient {
     }
 
     private static boolean sendOneToPlayerInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        debug("enter sendOneToPlayerInventory");
         Profiler.get().push("auxilio_scroll_down_one_to_player");
         try {
+        if (pendingVirtualPullTicks > 0) {
+            return false;
+        }
         if (!hovered.hasItem() || !menu.getCarried().isEmpty() || isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
             return false;
         }
@@ -339,40 +361,236 @@ public class AuxilioClient {
             return false;
         }
 
+        // For virtual/modded inventory slots, try extracting via carried stack interaction.
+        if (isVirtualInventorySlot(menu, hovered, mc.player.getInventory())) {
+            boolean moved = pullOneFromVirtualToPlayer(menu, hovered, target, source, mc);
+            if (!moved) {
+                debug("scrollDown virtual action unavailable for slot {}", hovered.index);
+            }
+            return moved;
+        }
+
+        int sourceBefore = hovered.getItem().getCount();
+        int targetBefore = target.getItem().isEmpty() ? 0 : target.getItem().getCount();
+
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
         click(menu, target, 1, ContainerInput.PICKUP, mc);
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
-        debug("scrollDown moved one item from slot {} to player slot {}", hovered.index, target.index);
-        return true;
+
+        int sourceAfter = hovered.getItem().getCount();
+        int targetAfter = target.getItem().isEmpty() ? 0 : target.getItem().getCount();
+        if ((sourceAfter == sourceBefore - 1) && (targetAfter == targetBefore + 1 || targetBefore == 0)) {
+            debug("scrollDown moved one item from slot {} to player slot {}", hovered.index, target.index);
+            return true;
+        }
+
+        debug("scrollDown no transfer from slot {} (blocked slot)", hovered.index);
+        return false;
         } finally {
             Profiler.get().pop();
         }
     }
 
+    @SubscribeEvent
+    static void onScreenRender(ScreenEvent.Render.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
+            clearPendingVirtualPull();
+            return;
+        }
+        if (mc.gameMode == null || mc.player == null) {
+            clearPendingVirtualPull();
+            return;
+        }
+        AbstractContainerMenu menu = screen.getMenu();
+
+        if (pendingVirtualPullCleanupTicks > 0) {
+            pendingVirtualPullCleanupTicks--;
+            if (!menu.getCarried().isEmpty() && hasVirtualSlots(menu, mc.player.getInventory())) {
+                if (depositCarriedIntoPlayer(menu, null, null, mc)) {
+                    debug("virtual pull recovery deposited carried item");
+                }
+            }
+        }
+
+        if (pendingVirtualPullTicks <= 0) {
+            return;
+        }
+        if (menu.containerId != pendingVirtualPullContainerId) {
+            clearPendingVirtualPull();
+            return;
+        }
+
+        pendingVirtualPullTicks--;
+        if (menu.getCarried().isEmpty()) {
+            if (pendingVirtualPullTicks <= 0) {
+                pendingVirtualPullCleanupTicks = 8;
+                clearPendingVirtualPull();
+            }
+            return;
+        }
+
+        Slot preferred = slotByIndex(menu, pendingVirtualPullPreferredPlayerSlot);
+        Slot source = slotByIndex(menu, pendingVirtualPullSourceSlot);
+        if (!depositCarriedIntoPlayer(menu, source, preferred, mc) && source != null) {
+            click(menu, source, 0, ContainerInput.PICKUP, mc);
+        }
+        pendingVirtualPullCleanupTicks = 8;
+        clearPendingVirtualPull();
+    }
+
+    private static boolean handleScrollUp(AbstractContainerMenu menu, Slot hovered, boolean hoveredIsPlayer, Minecraft mc) {
+        // Reversed by hovered side:
+        // player slot: push to opposite inventory
+        // non-player slot: pull matching item from player
+        return hoveredIsPlayer
+                ? sendOneToOppositeInventory(menu, hovered, mc)
+                : pullOneFromPlayerIntoSlot(menu, hovered, mc);
+    }
+
+    private static boolean handleScrollDown(AbstractContainerMenu menu, Slot hovered, boolean hoveredIsPlayer, Minecraft mc) {
+        // Reversed by hovered side:
+        // player slot: pull matching item from opposite inventory
+        // non-player slot: push item to player inventory
+        return hoveredIsPlayer
+                ? pullOneMatchingFromOppositeIntoPlayer(menu, hovered, mc)
+                : sendOneToPlayerInventory(menu, hovered, mc);
+    }
+
     private static boolean sendOneToOppositeInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        debug("enter sendOneToOppositeInventory");
         Profiler.get().push("auxilio_scroll_up_one_to_container");
         try {
         if (!hovered.hasItem() || !menu.getCarried().isEmpty()) {
             return false;
         }
 
+        // Modded virtual terminal path (AE2-style): route via virtual slot action API.
+        if (isPlayerInventorySlot(menu, hovered, mc.player.getInventory()) && hasVirtualSlots(menu, mc.player.getInventory())) {
+            boolean virtualMoved = pushOneFromPlayerToVirtual(menu, hovered, mc);
+            if (virtualMoved) {
+                return true;
+            }
+        }
+
         ItemStack source = hovered.getItem();
         Slot target = findSingleItemTarget(menu, hovered, source, mc.player.getInventory());
         if (target == null) {
+            debug("scrollUp no opposite target for slot {}", hovered.index);
             return false;
         }
+
+        // For virtual/modded menus, do not fallback to vanilla slot placement.
+        if (isVirtualInventorySlot(menu, target, mc.player.getInventory())) {
+            debug("scrollUp virtual action unavailable for targetSlot={} from playerSlot={}", target.index, hovered.index);
+            return false;
+        }
+
+        int sourceBefore = hovered.getItem().getCount();
+        int targetBefore = target.getItem().isEmpty() ? 0 : target.getItem().getCount();
 
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
         click(menu, target, 1, ContainerInput.PICKUP, mc);
         click(menu, hovered, 0, ContainerInput.PICKUP, mc);
-        debug("scrollUp moved one item from slot {} to slot {}", hovered.index, target.index);
-        return true;
+
+        int sourceAfter = hovered.getItem().getCount();
+        int targetAfter = target.getItem().isEmpty() ? 0 : target.getItem().getCount();
+        if ((sourceAfter == sourceBefore - 1) && (targetAfter == targetBefore + 1 || targetBefore == 0)) {
+            debug("scrollUp moved one item from slot {} to slot {}", hovered.index, target.index);
+            return true;
+        }
+
+        debug("scrollUp no transfer from slot {} (blocked slot)", hovered.index);
+        return false;
+        } finally {
+            Profiler.get().pop();
+        }
+    }
+
+    private static boolean pullOneFromPlayerIntoSlot(AbstractContainerMenu menu, Slot target, Minecraft mc) {
+        debug("enter pullOneFromPlayerIntoSlot");
+        Profiler.get().push("auxilio_scroll_up_pull_from_player");
+        try {
+            if (!target.hasItem() || !menu.getCarried().isEmpty()) {
+                return false;
+            }
+
+            ItemStack wanted = target.getItem().copyWithCount(1);
+            Slot source = findPlayerSlotWithType(menu, wanted, mc.player.getInventory());
+            if (source == null || source == target) {
+                return false;
+            }
+
+            // Virtual/modded terminals (AE2-style) must use virtual interaction path.
+            if (isVirtualInventorySlot(menu, target, mc.player.getInventory())) {
+                boolean moved = pushOneFromPlayerToVirtual(menu, source, mc);
+                if (moved) {
+                    debug("scrollUp virtual pulled one {} from player slot {}", wanted.getItem(), source.index);
+                }
+                return moved;
+            }
+
+            int before = target.getItem().getCount();
+            click(menu, source, 0, ContainerInput.PICKUP, mc);
+            click(menu, target, 1, ContainerInput.PICKUP, mc);
+            click(menu, source, 0, ContainerInput.PICKUP, mc);
+            int after = target.getItem().getCount();
+            boolean moved = after == before + 1 && menu.getCarried().isEmpty();
+            if (moved) {
+                debug("scrollUp pulled one {} from player slot {} into slot {}", wanted.getItem(), source.index, target.index);
+            }
+            return moved;
+        } finally {
+            Profiler.get().pop();
+        }
+    }
+
+    private static boolean pullOneMatchingFromOppositeIntoPlayer(AbstractContainerMenu menu, Slot playerSlot, Minecraft mc) {
+        debug("enter pullOneMatchingFromOppositeIntoPlayer");
+        Profiler.get().push("auxilio_scroll_down_pull_from_container");
+        try {
+            if (!playerSlot.hasItem() || !menu.getCarried().isEmpty()) {
+                return false;
+            }
+
+            ItemStack wanted = playerSlot.getItem().copyWithCount(1);
+            Slot source = null;
+            for (Slot slot : menu.slots) {
+                if (slot == null || !slot.isActive() || isPlayerInventorySlot(menu, slot, mc.player.getInventory()) || !slot.hasItem()) {
+                    continue;
+                }
+                if (ItemStack.isSameItemSameComponents(slot.getItem(), wanted)) {
+                    source = slot;
+                    break;
+                }
+            }
+            if (source == null) {
+                return false;
+            }
+
+            if (isVirtualInventorySlot(menu, source, mc.player.getInventory())) {
+                boolean moved = pullOneFromVirtualToPlayer(menu, source, playerSlot, wanted, mc);
+                debug("scrollDown pulled matching item via virtual action from slot {} moved={}", source.index, moved);
+                return moved;
+            }
+
+            int before = playerSlot.getItem().getCount();
+            click(menu, source, 0, ContainerInput.PICKUP, mc);
+            click(menu, playerSlot, 1, ContainerInput.PICKUP, mc);
+            click(menu, source, 0, ContainerInput.PICKUP, mc);
+            int after = playerSlot.getItem().getCount();
+            boolean moved = after == before + 1 && menu.getCarried().isEmpty();
+            if (moved) {
+                debug("scrollDown pulled one {} from slot {} into player slot {}", wanted.getItem(), source.index, playerSlot.index);
+            }
+            return moved;
         } finally {
             Profiler.get().pop();
         }
     }
 
     private static boolean sendOneToFurnaceFuelSlot(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        debug("enter sendOneToFurnaceFuelSlot");
         Profiler.get().push("auxilio_shift_scroll_one_to_furnace_fuel");
         try {
             if (!hovered.hasItem() || !menu.getCarried().isEmpty() || menu.slots.size() <= 1) {
@@ -405,6 +623,7 @@ public class AuxilioClient {
     }
 
     private static Slot findSingleItemTarget(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
+        debug("enter findSingleItemTarget");
         boolean sourceIsPlayer = isPlayerInventorySlot(menu, sourceSlot, playerInventory);
         Slot emptyCandidate = null;
 
@@ -433,6 +652,7 @@ public class AuxilioClient {
     }
 
     private static Slot findSingleItemTargetInPlayerInventory(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
+        debug("enter findSingleItemTargetInPlayerInventory");
         Slot emptyCandidate = null;
 
         for (Slot slot : menu.slots) {
@@ -472,10 +692,10 @@ public class AuxilioClient {
         return slot.index >= playerStart;
     }
 
-    private static boolean sortCraftGrid(AbstractContainerMenu menu, Minecraft mc) {
+    private static boolean sortCraftGrid(AbstractContainerMenu menu, List<Slot> craftSlots, Minecraft mc) {
+        debug("enter sortCraftGrid");
         Profiler.get().push("auxilio_sort_craft_grid");
         try {
-        List<Slot> craftSlots = getCraftSlots(menu);
         List<ItemStack> types = getDistinctTypesInCraftGrid(craftSlots);
         if (types.isEmpty()) {
             return false;
@@ -500,6 +720,7 @@ public class AuxilioClient {
     }
 
     private static boolean quickMoveAllOfTypeFromPlayer(AbstractContainerMenu menu, ItemStack sourceType, Minecraft mc) {
+        debug("enter quickMoveAllOfTypeFromPlayer");
         Profiler.get().push("auxilio_shift_double_click_quick_move_all");
         try {
         if (sourceType.isEmpty()) {
@@ -535,6 +756,7 @@ public class AuxilioClient {
     }
 
     private static boolean rebalanceCraftGridForType(AbstractContainerMenu menu, List<Slot> craftSlots, ItemStack type, boolean includeEmptySlots, Minecraft mc) {
+        debug("enter rebalanceCraftGridForType");
         List<Slot> eligibleSlots = new ArrayList<>();
         for (Slot slot : craftSlots) {
             if (!slot.isActive() || !slot.mayPlace(type)) {
@@ -603,14 +825,21 @@ public class AuxilioClient {
     }
 
     private static List<Slot> getCraftSlots(AbstractContainerMenu menu) {
-        return menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots();
+        return CraftGridResolver.resolve(menu);
+    }
+
+    private static boolean isSpreadSupportedMenu(AbstractContainerMenu menu) {
+        debug("enter isSpreadSupportedMenu");
+        return !getCraftSlots(menu).isEmpty();
     }
 
     private static boolean isCraftSlot(AbstractContainerMenu menu, Slot slot) {
+        debug("enter isCraftSlot");
         return getCraftSlots(menu).contains(slot);
     }
 
     private static List<ItemStack> getDistinctTypesInCraftGrid(List<Slot> craftSlots) {
+        debug("enter getDistinctTypesInCraftGrid");
         List<ItemStack> types = new ArrayList<>();
         for (Slot slot : craftSlots) {
             ItemStack current = slot.getItem();
@@ -632,6 +861,7 @@ public class AuxilioClient {
     }
 
     private static void moveSingleItem(AbstractContainerMenu menu, Slot from, Slot to, Minecraft mc) {
+        debug("enter moveSingleItem");
         if (from == to || !from.hasItem()) {
             return;
         }
@@ -670,7 +900,191 @@ public class AuxilioClient {
                 || InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
+    private static boolean isVirtualInventorySlot(AbstractContainerMenu menu, Slot slot, Inventory playerInventory) {
+        if (isPlayerInventorySlot(menu, slot, playerInventory)) {
+            return false;
+        }
+        String className = slot.getClass().getName();
+        return className.contains(".menu.slot.") || className.contains("RepoSlot");
+    }
+
+    private static boolean hasVirtualSlots(AbstractContainerMenu menu, Inventory playerInventory) {
+        for (Slot slot : menu.slots) {
+            if (slot != null && isVirtualInventorySlot(menu, slot, playerInventory)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Slot findMatchingVirtualSlot(AbstractContainerMenu menu, ItemStack reference, Inventory playerInventory) {
+        for (Slot slot : menu.slots) {
+            if (slot == null || !slot.isActive() || !isVirtualInventorySlot(menu, slot, playerInventory) || !slot.hasItem()) {
+                continue;
+            }
+            if (ItemStack.isSameItemSameComponents(slot.getItem(), reference)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private static Slot findAnyVirtualSlot(AbstractContainerMenu menu, Inventory playerInventory) {
+        for (Slot slot : menu.slots) {
+            if (slot != null && slot.isActive() && isVirtualInventorySlot(menu, slot, playerInventory)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private static boolean pushOneFromPlayerToVirtual(AbstractContainerMenu menu, Slot playerSource, Minecraft mc) {
+        ItemStack sourceType = playerSource.getItem().copyWithCount(1);
+        Slot virtualSlot = findAnyVirtualSlot(menu, mc.player.getInventory());
+        if (virtualSlot == null) {
+            debug("scrollUp virtual push no virtual slot for {}", sourceType.getItem());
+            return false;
+        }
+
+        if (!menu.getCarried().isEmpty()) {
+            debug("scrollUp virtual push skipped (carried not empty)");
+            return false;
+        }
+
+        int before = playerSource.getItem().getCount();
+        // Provide carried stack explicitly, let virtual action consume one, then return remainder.
+        click(menu, playerSource, 0, ContainerInput.PICKUP, mc);
+        if (menu.getCarried().isEmpty()) {
+            debug("scrollUp virtual push pickup failed playerSlot={}", playerSource.index);
+            return false;
+        }
+        boolean handled = tryVirtualInventoryAction(menu, virtualSlot, "SPLIT_OR_PLACE_SINGLE", -1L)
+                || tryVirtualInventoryAction(menu, virtualSlot, "ROLL_DOWN", -1L)
+                || tryVirtualInventoryAction(menu, virtualSlot, "PICKUP_OR_SET_DOWN", -1L);
+        if (!handled) {
+            click(menu, playerSource, 0, ContainerInput.PICKUP, mc);
+            debug("scrollUp virtual push action unavailable virtualSlot={} playerSlot={}", virtualSlot.index, playerSource.index);
+            return false;
+        }
+        click(menu, playerSource, 0, ContainerInput.PICKUP, mc);
+        int after = playerSource.getItem().getCount();
+        boolean moved = after == before - 1 && menu.getCarried().isEmpty();
+        debug("scrollUp virtual push from playerSlot={} via virtualSlot={} moved={} count {}->{}", playerSource.index, virtualSlot.index, moved, before, after);
+        return moved;
+    }
+
+    private static boolean pullOneFromVirtualToPlayer(AbstractContainerMenu menu, Slot virtualSource, Slot playerTarget, ItemStack reference, Minecraft mc) {
+        if (pendingVirtualPullTicks > 0) {
+            return false;
+        }
+        boolean handled = tryVirtualInventoryAction(menu, virtualSource, "PICKUP_SINGLE", null);
+        if (!handled) {
+            return false;
+        }
+        pendingVirtualPullContainerId = menu.containerId;
+        pendingVirtualPullSourceSlot = virtualSource.index;
+        pendingVirtualPullPreferredPlayerSlot = playerTarget == null ? -1 : playerTarget.index;
+        pendingVirtualPullTicks = 6;
+        debug("scrollDown virtual action queued slot={} action=PICKUP_SINGLE", virtualSource.index);
+        return true;
+    }
+
+    private static int countItemInPlayerInventory(AbstractContainerMenu menu, Inventory inventory, ItemStack reference) {
+        int total = 0;
+        for (Slot slot : menu.slots) {
+            if (slot == null || !slot.hasItem() || !isPlayerInventorySlot(menu, slot, inventory)) {
+                continue;
+            }
+            if (ItemStack.isSameItemSameComponents(slot.getItem(), reference)) {
+                total += slot.getItem().getCount();
+            }
+        }
+        return total;
+    }
+
+    private static boolean depositCarriedIntoPlayer(AbstractContainerMenu menu, Slot virtualSource, Slot preferredTarget, Minecraft mc) {
+        if (menu.getCarried().isEmpty()) {
+            return true;
+        }
+
+        ItemStack one = menu.getCarried().copyWithCount(1);
+        Slot target = findSingleItemTargetInPlayerInventory(menu, virtualSource, one, mc.player.getInventory());
+        if (target == null) {
+            target = preferredTarget;
+        }
+
+        if (target != null) {
+            click(menu, target, 1, ContainerInput.PICKUP, mc);
+            if (menu.getCarried().isEmpty()) {
+                return true;
+            }
+        }
+
+        // Fallback sweep across player slots in case preferred target is blocked.
+        for (Slot slot : menu.slots) {
+            if (slot == null || !slot.isActive() || !isPlayerInventorySlot(menu, slot, mc.player.getInventory())) {
+                continue;
+            }
+            if (!slot.mayPlace(menu.getCarried())) {
+                continue;
+            }
+            click(menu, slot, 1, ContainerInput.PICKUP, mc);
+            if (menu.getCarried().isEmpty()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Slot slotByIndex(AbstractContainerMenu menu, int index) {
+        if (index < 0) {
+            return null;
+        }
+        for (Slot slot : menu.slots) {
+            if (slot != null && slot.index == index) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private static void clearPendingVirtualPull() {
+        pendingVirtualPullContainerId = -1;
+        pendingVirtualPullSourceSlot = -1;
+        pendingVirtualPullPreferredPlayerSlot = -1;
+        pendingVirtualPullTicks = 0;
+    }
+
+    private static boolean tryVirtualInventoryAction(AbstractContainerMenu menu, Slot hovered, String actionName, Long serialOverride) {
+        try {
+            long serial;
+            if (serialOverride != null) {
+                serial = serialOverride;
+            } else {
+                Method getEntry = hovered.getClass().getMethod("getEntry");
+                Object entry = getEntry.invoke(hovered);
+                if (entry == null) {
+                    return false;
+                }
+                Method getSerial = entry.getClass().getMethod("getSerial");
+                serial = (long) getSerial.invoke(entry);
+            }
+
+            Class<?> inventoryActionClass = Class.forName("appeng.helpers.InventoryAction");
+            Object action = Enum.valueOf((Class<Enum>) inventoryActionClass.asSubclass(Enum.class), actionName);
+
+            Method handleInteraction = menu.getClass().getMethod("handleInteraction", long.class, inventoryActionClass);
+            handleInteraction.invoke(menu, serial, action);
+            return true;
+        } catch (Exception e) {
+            debug("virtual action send failed action={} err={}", actionName, e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     private static boolean canIncrementSameStack(Slot slot, ItemStack carried) {
+        debug("enter canIncrementSameStack");
         if (!slot.isActive() || !slot.mayPlace(carried)) {
             return false;
         }
@@ -685,6 +1099,7 @@ public class AuxilioClient {
     }
 
     private static List<Integer> craftGridCounts(List<Slot> craftSlots, ItemStack reference) {
+        debug("enter craftGridCounts");
         List<Integer> counts = new ArrayList<>(craftSlots.size());
         for (Slot slot : craftSlots) {
             ItemStack current = slot.getItem();
@@ -694,6 +1109,7 @@ public class AuxilioClient {
     }
 
     private static List<String> craftGridCountsAll(List<Slot> craftSlots) {
+        debug("enter craftGridCountsAll");
         List<String> out = new ArrayList<>(craftSlots.size());
         for (Slot slot : craftSlots) {
             ItemStack current = slot.getItem();
@@ -703,6 +1119,7 @@ public class AuxilioClient {
     }
 
     private static Slot findPlayerSlotWithType(AbstractContainerMenu menu, ItemStack type, Inventory inventory) {
+        debug("enter findPlayerSlotWithType");
         for (Slot slot : menu.slots) {
             if (slot == null || !slot.isActive() || !isPlayerInventorySlot(menu, slot, inventory) || !slot.hasItem()) {
                 continue;
@@ -715,6 +1132,7 @@ public class AuxilioClient {
     }
 
     private static Slot findSingleItemTargetInCraftGrid(List<Slot> craftSlots, ItemStack sourceStack) {
+        debug("enter findSingleItemTargetInCraftGrid");
         Slot emptyCandidate = null;
         for (Slot slot : craftSlots) {
             if (!slot.isActive() || !slot.mayPlace(sourceStack)) {
@@ -733,8 +1151,6 @@ public class AuxilioClient {
     }
 
     private static void debug(String message, Object... args) {
-        if (Config.DEBUG_MOUSE_TWEAKS.getAsBoolean()) {
-            Auxilio.LOGGER.info("[MouseTweaks] " + message, args);
-        }
+        AuxilioDebug.log("MouseTweaks", message, args);
     }
 }

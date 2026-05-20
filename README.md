@@ -1,5 +1,8 @@
 ![build status](https://github.com/dovry/Auxilio/actions/workflows/build-and-publish.yml/badge.svg?branch=master)
 
+[CurseForge](https://www.curseforge.com/minecraft/mc-mods/auxilio)
+[Modrinth](https://modrinth.com/mod/auxilio)
+
 # Auxilio
 Means help or assist in Latin.
 
@@ -25,6 +28,11 @@ Single-item-type grids are spread as evenly as possible across all valid craftin
 Mixed-item grids use type-local balancing: each type is equalized within the slots that already contain that type.
 
 ![mixed items](https://github.com/dovry/Auxilio/blob/master/images/mixed_items1.gif?raw=true)
+
+![mod compatibility](https://github.com/dovry/Auxilio/blob/master/images/ae2_spread.gif?raw=true)
+
+![mod compatibility](https://github.com/dovry/Auxilio/blob/master/images/ae2_scroll.gif?raw=true)
+
 
 ## Shift + double left-click bulk transfer:
 
