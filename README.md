@@ -1,5 +1,8 @@
 ![build status](https://github.com/dovry/Auxilio/actions/workflows/build-and-publish.yml/badge.svg?branch=master)
 
+[CurseForge](https://www.curseforge.com/minecraft/mc-mods/auxilio)
+[Modrinth](https://modrinth.com/mod/auxilio)
+
 # Auxilio
 Means help or assist in Latin.
 
