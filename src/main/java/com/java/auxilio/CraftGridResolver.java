@@ -14,7 +14,6 @@ final class CraftGridResolver {
     }
 
     static List<Slot> resolve(AbstractContainerMenu menu) {
-        AuxilioDebug.log("MouseTweaks", "enter CraftGridResolver.resolve");
         if (menu instanceof InventoryMenu inventoryMenu) {
             return inventoryMenu.getInputGridSlots();
         }
@@ -31,7 +30,6 @@ final class CraftGridResolver {
     }
 
     private static List<Slot> resolveViaCraftingMatrixProvider(AbstractContainerMenu menu) {
-        AuxilioDebug.log("MouseTweaks", "enter CraftGridResolver.resolveViaCraftingMatrixProvider");
         try {
             Method getCraftingMatrix = menu.getClass().getMethod("getCraftingMatrix");
             Object matrix = getCraftingMatrix.invoke(menu);
@@ -58,7 +56,6 @@ final class CraftGridResolver {
     }
 
     private static List<Slot> resolveViaCraftingSlotHeuristics(AbstractContainerMenu menu) {
-        AuxilioDebug.log("MouseTweaks", "enter CraftGridResolver.resolveViaCraftingSlotHeuristics");
         List<Slot> candidates = new ArrayList<>();
         for (Slot slot : menu.slots) {
             if (slot == null || !slot.isActive()) {
