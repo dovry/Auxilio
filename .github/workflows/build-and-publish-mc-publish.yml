@@ -1,4 +1,4 @@
-name: Build And Publish Jar
+name: Build And Publish Jar (mc-publish)
 
 on:
   push:
@@ -48,6 +48,7 @@ jobs:
     env:
       JAVA_VERSION: '25'
       CF_PROJECT_ID: '1543992'
+      MODRINTH_PROJECT_ID: 'tpPRqoyR'
     permissions:
       contents: write
     steps:
@@ -87,7 +88,7 @@ jobs:
           name: auxilio-jar
           path: build/jar
 
-      - name: Upload jar to GitHub Release
+      - name: Build CHANGELOG.md
         shell: bash
         run: |
           RELEASE_VERSION="${{ steps.meta.outputs.release_version }}"
@@ -103,6 +104,8 @@ jobs:
           fi
 
           {
+            echo "# ${RELEASE_VERSION}"
+            echo
             echo "## Versions"
             echo "- Mod: ${RELEASE_VERSION}"
             echo "- Minecraft: ${MINECRAFT_VERSION}"
@@ -125,43 +128,25 @@ jobs:
             else
               echo "- None referenced in commit messages."
             fi
-          } > release-notes.md
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.meta.outputs.release_version }}
-          name: ${{ steps.meta.outputs.release_version }}
-          body_path: release-notes.md
-          files: build/jar/*.jar
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build CurseForge changelog
-        id: cf_changelog
-        shell: bash
-        run: |
-          cp release-notes.md curseforge-changelog.md
-          {
             echo
             echo "## README"
             cat README.md
-          } >> curseforge-changelog.md
+          } > CHANGELOG.md
 
-          {
-            echo "body<<EOF"
-            cat curseforge-changelog.md
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Upload jar to CurseForge
-        uses: itsmeow/curseforge-upload@v3
+      - name: Publish to GitHub, CurseForge, and Modrinth
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
-          token: ${{ secrets.CF_API_KEY }}
-          project_id: ${{ env.CF_PROJECT_ID }}
-          game_endpoint: minecraft
-          file_path: build/jar/${{ steps.meta.outputs.dist_jar_name }}
-          release_type: release
-          game_versions: Minecraft ${{ steps.meta.outputs.cf_minecraft_series }}:${{ steps.meta.outputs.cf_minecraft_version }},Java ${{ env.JAVA_VERSION }},NeoForge
-          changelog: ${{ steps.cf_changelog.outputs.body }}
-          changelog_type: markdown
+          files: build/jar/${{ steps.meta.outputs.dist_jar_name }}
+          changelog-file: CHANGELOG.md
+
+          github-tag: ${{ steps.meta.outputs.release_version }}
+          name: ${{ steps.meta.outputs.release_version }}
+          version: ${{ steps.meta.outputs.release_version }}
+          version-type: release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          curseforge-id: ${{ env.CF_PROJECT_ID }}
+          curseforge-token: ${{ secrets.CF_API_KEY }}
+
+          modrinth-id: ${{ env.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
