@@ -64,6 +64,7 @@ public class AuxilioClient {
     private static int customRightDragLastSlot = -1;
 
     public AuxilioClient(IEventBus modEventBus, ModContainer container) {
+        debug("enter AuxilioClient");
         // Allows NeoForge to create a config screen for this mod's configs.
         // The config screen is accessed by going to the Mods screen > clicking on your mod > clicking on config.
         // Do not forget to add translations for your config options to the en_us.json file.
@@ -73,6 +74,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
+        debug("enter onClientSetup");
         // Some client setup code
         Auxilio.LOGGER.info("HELLO FROM CLIENT SETUP");
         Auxilio.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
@@ -80,6 +82,7 @@ public class AuxilioClient {
     }
 
     static void registerKeyMappings(RegisterKeyMappingsEvent event) {
+        debug("enter registerKeyMappings");
         event.registerCategory(KEY_CATEGORY);
         event.register(SPREAD_IN_CRAFTING);
         event.register(DRAG_QUICK_MOVE);
@@ -87,6 +90,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMousePressed(ScreenEvent.MouseButtonPressed.Pre event) {
+        debug("enter onMousePressed");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -149,6 +153,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        debug("enter onKeyPressed");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -189,6 +194,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMouseDragged(ScreenEvent.MouseDragged.Pre event) {
+        debug("enter onMouseDragged");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -261,6 +267,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMouseReleased(ScreenEvent.MouseButtonReleased.Pre event) {
+        debug("enter onMouseReleased");
         if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_RIGHT && customRightDragActive) {
             customRightDragActive = false;
             customRightDragLastSlot = -1;
@@ -276,6 +283,7 @@ public class AuxilioClient {
 
     @SubscribeEvent
     static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre event) {
+        debug("enter onMouseScrolled");
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
@@ -327,6 +335,7 @@ public class AuxilioClient {
     }
 
     private static boolean sendOneToPlayerInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        debug("enter sendOneToPlayerInventory");
         Profiler.get().push("auxilio_scroll_down_one_to_player");
         try {
         if (!hovered.hasItem() || !menu.getCarried().isEmpty() || isPlayerInventorySlot(menu, hovered, mc.player.getInventory())) {
@@ -350,6 +359,7 @@ public class AuxilioClient {
     }
 
     private static boolean sendOneToOppositeInventory(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        debug("enter sendOneToOppositeInventory");
         Profiler.get().push("auxilio_scroll_up_one_to_container");
         try {
         if (!hovered.hasItem() || !menu.getCarried().isEmpty()) {
@@ -373,6 +383,7 @@ public class AuxilioClient {
     }
 
     private static boolean sendOneToFurnaceFuelSlot(AbstractContainerMenu menu, Slot hovered, Minecraft mc) {
+        debug("enter sendOneToFurnaceFuelSlot");
         Profiler.get().push("auxilio_shift_scroll_one_to_furnace_fuel");
         try {
             if (!hovered.hasItem() || !menu.getCarried().isEmpty() || menu.slots.size() <= 1) {
@@ -405,6 +416,7 @@ public class AuxilioClient {
     }
 
     private static Slot findSingleItemTarget(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
+        debug("enter findSingleItemTarget");
         boolean sourceIsPlayer = isPlayerInventorySlot(menu, sourceSlot, playerInventory);
         Slot emptyCandidate = null;
 
@@ -433,6 +445,7 @@ public class AuxilioClient {
     }
 
     private static Slot findSingleItemTargetInPlayerInventory(AbstractContainerMenu menu, Slot sourceSlot, ItemStack sourceStack, Inventory playerInventory) {
+        debug("enter findSingleItemTargetInPlayerInventory");
         Slot emptyCandidate = null;
 
         for (Slot slot : menu.slots) {
@@ -457,6 +470,7 @@ public class AuxilioClient {
     }
 
     private static boolean isPlayerInventorySlot(AbstractContainerMenu menu, Slot slot, Inventory inventory) {
+        debug("enter isPlayerInventorySlot");
         // Preferred check when slot container identity matches player inventory.
         if (slot.container == inventory) {
             return true;
@@ -473,6 +487,7 @@ public class AuxilioClient {
     }
 
     private static boolean sortCraftGrid(AbstractContainerMenu menu, Minecraft mc) {
+        debug("enter sortCraftGrid");
         Profiler.get().push("auxilio_sort_craft_grid");
         try {
         List<Slot> craftSlots = getCraftSlots(menu);
@@ -500,6 +515,7 @@ public class AuxilioClient {
     }
 
     private static boolean quickMoveAllOfTypeFromPlayer(AbstractContainerMenu menu, ItemStack sourceType, Minecraft mc) {
+        debug("enter quickMoveAllOfTypeFromPlayer");
         Profiler.get().push("auxilio_shift_double_click_quick_move_all");
         try {
         if (sourceType.isEmpty()) {
@@ -535,6 +551,7 @@ public class AuxilioClient {
     }
 
     private static boolean rebalanceCraftGridForType(AbstractContainerMenu menu, List<Slot> craftSlots, ItemStack type, boolean includeEmptySlots, Minecraft mc) {
+        debug("enter rebalanceCraftGridForType");
         List<Slot> eligibleSlots = new ArrayList<>();
         for (Slot slot : craftSlots) {
             if (!slot.isActive() || !slot.mayPlace(type)) {
@@ -603,14 +620,17 @@ public class AuxilioClient {
     }
 
     private static List<Slot> getCraftSlots(AbstractContainerMenu menu) {
+        debug("enter getCraftSlots");
         return menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots();
     }
 
     private static boolean isCraftSlot(AbstractContainerMenu menu, Slot slot) {
+        debug("enter isCraftSlot");
         return getCraftSlots(menu).contains(slot);
     }
 
     private static List<ItemStack> getDistinctTypesInCraftGrid(List<Slot> craftSlots) {
+        debug("enter getDistinctTypesInCraftGrid");
         List<ItemStack> types = new ArrayList<>();
         for (Slot slot : craftSlots) {
             ItemStack current = slot.getItem();
@@ -632,6 +652,7 @@ public class AuxilioClient {
     }
 
     private static void moveSingleItem(AbstractContainerMenu menu, Slot from, Slot to, Minecraft mc) {
+        debug("enter moveSingleItem");
         if (from == to || !from.hasItem()) {
             return;
         }
@@ -643,34 +664,41 @@ public class AuxilioClient {
     }
 
     private static boolean matchesSpreadMouse(ScreenEvent.MouseButtonPressed.Pre event) {
+        debug("enter matchesSpreadMouse");
         InputConstants.Key pressed = InputConstants.Type.MOUSE.getOrCreate(event.getButton());
         // isActiveAndMatches handles vanilla keybind behavior; direct key compare keeps Shift+bind working.
         return SPREAD_IN_CRAFTING.isActiveAndMatches(pressed) || SPREAD_IN_CRAFTING.getKey().equals(pressed);
     }
 
     private static boolean matchesSpreadKey(ScreenEvent.KeyPressed.Pre event) {
+        debug("enter matchesSpreadKey");
         InputConstants.Key pressed = InputConstants.getKey(event.getKeyEvent());
         return SPREAD_IN_CRAFTING.isActiveAndMatches(pressed) || SPREAD_IN_CRAFTING.getKey().equals(pressed);
     }
 
     private static boolean isKeyFeatureEnabled(KeyMapping key) {
+        debug("enter isKeyFeatureEnabled");
         return !key.isUnbound();
     }
 
     private static void click(AbstractContainerMenu menu, Slot slot, int button, ContainerInput input, Minecraft mc) {
+        debug("enter click");
         clickRaw(menu.containerId, slot.index, button, input, mc);
     }
 
     private static void clickRaw(int containerId, int slotIndex, int button, ContainerInput input, Minecraft mc) {
+        debug("enter clickRaw");
         mc.gameMode.handleContainerInput(containerId, slotIndex, button, input, mc.player);
     }
 
     private static boolean isShiftHeld(Minecraft mc) {
+        debug("enter isShiftHeld");
         return InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
                 || InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     private static boolean canIncrementSameStack(Slot slot, ItemStack carried) {
+        debug("enter canIncrementSameStack");
         if (!slot.isActive() || !slot.mayPlace(carried)) {
             return false;
         }
@@ -685,6 +713,7 @@ public class AuxilioClient {
     }
 
     private static List<Integer> craftGridCounts(List<Slot> craftSlots, ItemStack reference) {
+        debug("enter craftGridCounts");
         List<Integer> counts = new ArrayList<>(craftSlots.size());
         for (Slot slot : craftSlots) {
             ItemStack current = slot.getItem();
@@ -694,6 +723,7 @@ public class AuxilioClient {
     }
 
     private static List<String> craftGridCountsAll(List<Slot> craftSlots) {
+        debug("enter craftGridCountsAll");
         List<String> out = new ArrayList<>(craftSlots.size());
         for (Slot slot : craftSlots) {
             ItemStack current = slot.getItem();
@@ -703,6 +733,7 @@ public class AuxilioClient {
     }
 
     private static Slot findPlayerSlotWithType(AbstractContainerMenu menu, ItemStack type, Inventory inventory) {
+        debug("enter findPlayerSlotWithType");
         for (Slot slot : menu.slots) {
             if (slot == null || !slot.isActive() || !isPlayerInventorySlot(menu, slot, inventory) || !slot.hasItem()) {
                 continue;
@@ -715,6 +746,7 @@ public class AuxilioClient {
     }
 
     private static Slot findSingleItemTargetInCraftGrid(List<Slot> craftSlots, ItemStack sourceStack) {
+        debug("enter findSingleItemTargetInCraftGrid");
         Slot emptyCandidate = null;
         for (Slot slot : craftSlots) {
             if (!slot.isActive() || !slot.mayPlace(sourceStack)) {
@@ -733,8 +765,6 @@ public class AuxilioClient {
     }
 
     private static void debug(String message, Object... args) {
-        if (Config.DEBUG_MOUSE_TWEAKS.getAsBoolean()) {
-            Auxilio.LOGGER.info("[MouseTweaks] " + message, args);
-        }
+        AuxilioDebug.log("MouseTweaks", message, args);
     }
 }
