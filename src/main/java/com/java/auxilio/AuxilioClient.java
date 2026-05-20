@@ -118,6 +118,7 @@ public class AuxilioClient {
         }
 
         boolean handled = false;
+        List<Slot> craftSlots = getCraftSlots(menu);
         if (Config.ENABLE_SHIFT_DOUBLE_CLICK_BULK_MOVE.getAsBoolean()
                 && event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
                 && event.getMouseButtonEvent().hasShiftDown()
@@ -137,13 +138,13 @@ public class AuxilioClient {
                 lastShiftLeftType = sourceSlot.getItem().copyWithCount(1);
                 debug("shiftDoubleLeft armed slot={} type={}", sourceSlot.index, lastShiftLeftType.getItem());
             }
-        } else if ((menu instanceof InventoryMenu || menu instanceof CraftingMenu)
+        } else if (!craftSlots.isEmpty()
                 && menu.getCarried().isEmpty()
                 && Config.ENABLE_SPREAD_SORT.getAsBoolean()
                 && isKeyFeatureEnabled(SPREAD_IN_CRAFTING)
                 && matchesSpreadMouse(event)
-                && isCraftSlot(menu, sourceSlot)) {
-            handled = sortCraftGrid(menu, mc);
+                && craftSlots.contains(sourceSlot)) {
+            handled = sortCraftGrid(menu, craftSlots, mc);
         }
 
         if (handled) {
@@ -170,7 +171,7 @@ public class AuxilioClient {
         }
 
         AbstractContainerMenu menu = screen.getMenu();
-        if (!(menu instanceof InventoryMenu) && !(menu instanceof CraftingMenu)) {
+        if (!isSpreadSupportedMenu(menu)) {
             return;
         }
         if (!menu.getCarried().isEmpty()) {
@@ -182,9 +183,10 @@ public class AuxilioClient {
             return;
         }
 
+        List<Slot> craftSlots = getCraftSlots(menu);
         boolean handled = false;
-        if (isCraftSlot(menu, sourceSlot)) {
-            handled = sortCraftGrid(menu, mc);
+        if (craftSlots.contains(sourceSlot)) {
+            handled = sortCraftGrid(menu, craftSlots, mc);
         }
 
         if (handled) {
@@ -486,11 +488,10 @@ public class AuxilioClient {
         return slot.index >= playerStart;
     }
 
-    private static boolean sortCraftGrid(AbstractContainerMenu menu, Minecraft mc) {
+    private static boolean sortCraftGrid(AbstractContainerMenu menu, List<Slot> craftSlots, Minecraft mc) {
         debug("enter sortCraftGrid");
         Profiler.get().push("auxilio_sort_craft_grid");
         try {
-        List<Slot> craftSlots = getCraftSlots(menu);
         List<ItemStack> types = getDistinctTypesInCraftGrid(craftSlots);
         if (types.isEmpty()) {
             return false;
@@ -621,7 +622,12 @@ public class AuxilioClient {
 
     private static List<Slot> getCraftSlots(AbstractContainerMenu menu) {
         debug("enter getCraftSlots");
-        return menu instanceof InventoryMenu ? ((InventoryMenu) menu).getInputGridSlots() : ((CraftingMenu) menu).getInputGridSlots();
+        return CraftGridResolver.resolve(menu);
+    }
+
+    private static boolean isSpreadSupportedMenu(AbstractContainerMenu menu) {
+        debug("enter isSpreadSupportedMenu");
+        return !getCraftSlots(menu).isEmpty();
     }
 
     private static boolean isCraftSlot(AbstractContainerMenu menu, Slot slot) {
